@@ -1,0 +1,220 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "NFS API Documentation",
+    "version": "1.0.0",
+    "description": "Documentation for the NFS Backend API"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "security": [],
+        "responses": {
+          "201": { "description": "User created" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login to the platform",
+        "security": [],
+        "responses": {
+          "200": { "description": "Successful login" }
+        }
+      }
+    },
+    "/api/auth/profile": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get connected user profile",
+        "responses": {
+          "200": { "description": "User profile data" }
+        }
+      }
+    },
+    "/api/wallets/": {
+      "get": {
+        "tags": ["Wallets"],
+        "summary": "Get user wallets/accounts",
+        "responses": {
+          "200": { "description": "Array of accounts" }
+        }
+      }
+    },
+    "/api/wallets/transfer": {
+      "post": {
+        "tags": ["Wallets"],
+        "summary": "Transfer money",
+        "responses": {
+          "200": { "description": "Transfer initiated" }
+        }
+      }
+    },
+    "/api/wallets/transactions": {
+      "get": {
+        "tags": ["Wallets"],
+        "summary": "Get user transactions",
+        "responses": {
+          "200": { "description": "Transactions array" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Admin - Users"],
+        "summary": "List all users",
+        "responses": { "200": { "description": "Users list" } }
+      },
+      "post": {
+        "tags": ["Admin - Users"],
+        "summary": "Create a new user/admin",
+        "responses": { "201": { "description": "User created" } }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "patch": {
+        "tags": ["Admin - Users"],
+        "summary": "Update user status (Activate/Block)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Status updated" } }
+      }
+    },
+    "/api/admin/users/{id}/credit": {
+      "post": {
+        "tags": ["Admin - Users"],
+        "summary": "Initiate credit on user account",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Credit requested" } }
+      }
+    },
+    "/api/admin/transactions": {
+      "get": {
+        "tags": ["Admin - Transactions"],
+        "summary": "Get all transactions (COMEX)",
+        "responses": { "200": { "description": "Transactions list" } }
+      }
+    },
+    "/api/admin/transactions/{txId}/validate": {
+      "put": {
+        "tags": ["Admin - Transactions"],
+        "summary": "Validate transaction (COMEX)",
+        "parameters": [
+          { "name": "txId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Transaction validated" } }
+      }
+    },
+    "/api/admin/transactions/{txId}/reject": {
+      "put": {
+        "tags": ["Admin - Transactions"],
+        "summary": "Reject transaction (COMEX)",
+        "parameters": [
+          { "name": "txId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Transaction rejected" } }
+      }
+    },
+    "/api/admin/groups": {
+      "get": {
+        "tags": ["Admin - Security"],
+        "summary": "List all groups",
+        "responses": { "200": { "description": "Groups list" } }
+      },
+      "post": {
+        "tags": ["Admin - Security"],
+        "summary": "Create a new group",
+        "responses": { "201": { "description": "Group created" } }
+      }
+    },
+    "/api/admin/groups/{id}": {
+      "put": {
+        "tags": ["Admin - Security"],
+        "summary": "Update a group",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Group updated" } }
+      }
+    },
+    "/api/admin/users/{id}/groups": {
+      "put": {
+        "tags": ["Admin - Security"],
+        "summary": "Assign groups to user",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Groups assigned" } }
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "tags": ["Admin - Stats"],
+        "summary": "Get dashboard statistics",
+        "responses": { "200": { "description": "Dashboard data" } }
+      }
+    },
+    "/api/admin/tontines": {
+      "get": {
+        "tags": ["Admin - Products"],
+        "summary": "List tontines",
+        "responses": { "200": { "description": "Tontines list" } }
+      },
+      "post": {
+        "tags": ["Admin - Products"],
+        "summary": "Create tontine group",
+        "responses": { "201": { "description": "Tontine created" } }
+      }
+    },
+    "/api/admin/loans": {
+      "get": {
+        "tags": ["Admin - Products"],
+        "summary": "List loans",
+        "responses": { "200": { "description": "Loans list" } }
+      }
+    },
+    "/api/admin/loans/{id}": {
+      "patch": {
+        "tags": ["Admin - Products"],
+        "summary": "Update loan status",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Loan updated" } }
+      }
+    },
+    "/api/admin/referral-stats": {
+      "get": {
+        "tags": ["Admin - Stats"],
+        "summary": "Get referral stats",
+        "responses": { "200": { "description": "Referral tree" } }
+      }
+    }
+  }
+}

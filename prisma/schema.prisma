@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  email           String?   @unique
+  phone           String    @unique
+  password        String
+  firstName       String?
+  lastName        String?
+  activated       Boolean   @default(false)
+  roles           String[]  @default(["CLIENT"])
+  verified        Boolean   @default(false)
+  fluxIn          Float?    @default(0)
+  fluxOut         Float?    @default(0)
+  referralCode    String?
+  profession      String?
+  matricule       String?
+  service         String?
+  country         String?   @default("Cameroun")
+  joiningYear     Int?
+  accountNumber   String?   @unique
+  uniqueKey       String?   @unique
+  documentType    String?   // CNI, PASSPORT
+  documentNumber  String?
+  documentUrl     String?
+  ribUrl          String?
+  referrerName    String?
+  address         String?
+  addressImageUrl String?
+  swiftCode       String?   @default("")
+  averageIncome   Float?
+  beneficiaries   Json?     @default("[]")
+  emergencyContacts Json?   @default("[]")
+  kycStatus       String?   @default("IDLE") // IDLE, PENDING, APPROVED, REJECTED
+  createdAt       DateTime? @default(now())
+  updatedAt       DateTime? @updatedAt
+
+  accountIds      String[]  @db.ObjectId @map("accountList")
+  transactions    Transaction[]
+
+  userGroups      UserGroup[] @relation(fields: [userGroupIds], references: [id])
+  userGroupIds    String[]    @db.ObjectId
+  
+  tontineGroups   TontineGroup[] @relation(fields: [tontineGroupIds], references: [id])
+  tontineGroupIds String[]       @db.ObjectId
+  
+  loans           Loan[]
+
+  @@map("users")
+}
+
+model Loan {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String    @db.ObjectId
+  user            User      @relation(fields: [userId], references: [id])
+  amount          Float
+  interestRate    Float     @default(0)
+  totalInterest   Float?    @default(0)
+  duration        Int       // in months
+  purpose         String?
+  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
+  avalistes       Json?     @default("[]")     // List of { userId, amount, interestShare }
+  createdBy       String?
+  createdAt       DateTime? @default(now())
+  updatedAt       DateTime? @updatedAt
+
+  @@map("loans")
+}
+
+model Account {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  currentBalance   Float     @default(0)
+  availableBalance Float     @default(0)
+  currency         String    @default("XAF")
+  type             String    @default("PRINCIPAL")
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
+
+  @@map("accounts")
+}
+
+model Transaction {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String?   @map("user") @db.ObjectId
+  user            User?     @relation(fields: [userId], references: [id])
+  purpose         String?   @map("purpose")
+  amount          Float?    @map("destinationAmount")
+  status          String?   @default("PENDING")
+  transactionRef  String?   @unique @map("transactionRef")
+  createdBy       String?   @map("createdBy")
+  validatedBy     String[]  @default([]) @map("validatedBy")
+  targetAccountType String?
+  sourceAccountType String?
+  currency          String?   @default("XAF")
+  operation         Json?
+  createdAt       DateTime? @default(now())
+
+  @@map("transactions")
+}
+
+model TontineGroup {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  code            String?  @unique
+  amount          Float
+  maxParticipants Int?     @map("limit_participant")
+  nb_participant  Int?     @default(0)
+  frequency       String?  @default("MONTHLY")
+  currency        String?  @default("XAF")
+  status          String?  @default("ACTIF")
+  createdAt       DateTime? @default(now())
+
+  members         User[]   @relation(fields: [memberIds], references: [id])
+  memberIds       String[] @db.ObjectId
+
+  @@map("cotisations")
+}
+
+model Currency {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  code        String   @unique // e.g., "XAF", "EUR", "USD"
+  symbol      String   // e.g., "FCFA", "€", "$"
+  name        String   // e.g., "Franc CFA", "Euro", "US Dollar"
+  isActive    Boolean  @default(true)
+  rateToBase  Float    @default(1.0) // Rate relative to XAF
+  lastUpdated DateTime? @default(now())
+  createdAt   DateTime? @default(now())
+
+  @@map("currencies")
+}
+
+model UserGroup {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  permissions String[] @default([])
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
+  
+  users       User[]   @relation(fields: [userIds], references: [id])
+  userIds     String[] @db.ObjectId
+
+  @@map("user_groups")
+}
+
+model LoanConfig {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  code        String   @unique
+  rate        Float
+  duration    Int      // duration in days
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
+
+  @@map("loan_configs")
+}
+
+model PasswordReset {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("password_resets")
+}
+
