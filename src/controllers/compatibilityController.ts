@@ -13,7 +13,8 @@ export const getCotisations = async (req: Request, res: Response) => {
     }));
     res.json({ data: mapped });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getCotisations error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -37,7 +38,8 @@ export const getProviderByCode = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getProviderByCode error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 

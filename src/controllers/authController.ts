@@ -59,7 +59,8 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({ message: 'User registered successfully', userId: user.id });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Registration error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -134,7 +135,8 @@ export const login = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -156,7 +158,8 @@ export const adminLogin = async (req: Request, res: Response) => {
 
     res.json({ token, user: { id: user.id, email: user.email, role: 'ADMIN' } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -255,7 +258,7 @@ export const getProfile = async (req: any, res: Response) => {
     res.status(404).json({ error: "User not found" });
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -284,7 +287,8 @@ export const getAvaliseCapacity = async (req: any, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Get avalise capacity error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -300,7 +304,8 @@ export const activateAccount = async (req: Request, res: Response) => {
     });
     res.json({ message: "Account activated successfully", data: { id, status: "active" } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Activate account error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -321,7 +326,8 @@ export const updateUserInfo = async (req: Request, res: Response) => {
 
     res.json({ data: user });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Update user info error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -361,7 +367,8 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
 
 
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Password reset request error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -398,7 +405,8 @@ export const resetPassword = async (req: Request, res: Response) => {
 
     res.json({ message: 'Password reset successful' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 

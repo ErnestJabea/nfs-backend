@@ -30,7 +30,8 @@ export const getUsers = async (req: Request, res: Response) => {
 
     res.json(mappedUsers);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getUsers error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -72,7 +73,8 @@ export const createUser = async (req: Request, res: Response) => {
 
     res.status(201).json(newUser);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('createUser error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -86,7 +88,8 @@ export const updateUserStatus = async (req: Request, res: Response) => {
     });
     res.json(user);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('updateUserStatus error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -104,7 +107,8 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     });
     res.json(updatedUser);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('updateUserProfile error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -124,7 +128,8 @@ export const creditUserAccount = async (req: any, res: Response) => {
     });
     res.json({ message: "Opération soumise au COMEX", transaction });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('creditUserAccount error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -175,7 +180,8 @@ export const validateTransaction = async (req: any, res: Response) => {
       res.json({ message: `Validé (${newValidators.length}/3)` });
     }
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('validateTransaction error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -188,7 +194,8 @@ export const rejectTransaction = async (req: any, res: Response) => {
     });
     res.json(tx);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('rejectTransaction error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -239,7 +246,8 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       activeTontines
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getDashboardStats error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -249,7 +257,8 @@ export const createTontineGroup = async (req: Request, res: Response) => {
     const group = await prisma.tontineGroup.create({ data: { ...data, status: 'ACTIF' } });
     res.status(201).json(group);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('createTontineGroup error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -258,7 +267,8 @@ export const getTontines = async (req: Request, res: Response) => {
     const groups = await prisma.tontineGroup.findMany({ include: { members: true } });
     res.json(groups);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getTontines error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -272,7 +282,8 @@ export const addParticipantToTontine = async (req: Request, res: Response) => {
     });
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('addParticipantToTontine error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -286,7 +297,8 @@ export const removeParticipantFromTontine = async (req: Request, res: Response) 
     });
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('removeParticipantFromTontine error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -295,7 +307,8 @@ export const payCotisationFromCaution = async (req: Request, res: Response) => {
     const { groupId, userId } = req.body;
     res.json({ message: "Payé via Caution" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('payCotisationFromCaution error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -304,7 +317,8 @@ export const payCotisationInCash = async (req: Request, res: Response) => {
     const { groupId, userId } = req.body;
     res.json({ message: "Payé en espèces" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('payCotisationInCash error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -313,7 +327,8 @@ export const getLoans = async (req: Request, res: Response) => {
     const loans = await prisma.loan.findMany({ include: { user: true }, orderBy: { createdAt: 'desc' } });
     res.json(loans);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getLoans error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -350,7 +365,8 @@ export const updateLoanStatus = async (req: any, res: Response) => {
     });
     res.json(updatedLoan);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('updateLoanStatus error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -374,7 +390,8 @@ export const createLoan = async (req: any, res: Response) => {
     });
     res.status(201).json(loan);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('createLoan error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -383,19 +400,28 @@ export const getTransactions = async (req: Request, res: Response) => {
     const transactions = await prisma.transaction.findMany({ orderBy: { createdAt: 'desc' }, include: { user: true } });
     res.json(transactions);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getTransactions error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
 export const getReferralStats = async (req: Request, res: Response) => {
-  try { res.json([]); } catch (error: any) { res.status(500).json({ error: error.message }); }
+  try { 
+    res.json([]); 
+  } catch (error: any) { 
+    console.error('getReferralStats error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message }); 
+  }
 };
 
 export const getGroups = async (req: Request, res: Response) => {
   try {
     const groups = await prisma.userGroup.findMany({ include: { users: true } });
     res.json(groups);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('getGroups error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };
 
 export const createGroup = async (req: Request, res: Response) => {
@@ -403,7 +429,10 @@ export const createGroup = async (req: Request, res: Response) => {
     const { name, description, permissions } = req.body;
     const group = await prisma.userGroup.create({ data: { name, description, permissions } });
     res.json(group);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('createGroup error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };
 
 export const updateGroup = async (req: Request, res: Response) => {
@@ -412,7 +441,10 @@ export const updateGroup = async (req: Request, res: Response) => {
     const data = req.body;
     const group = await prisma.userGroup.update({ where: { id: id as string }, data });
     res.json(group);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('updateGroup error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };
 
 export const assignUserGroups = async (req: Request, res: Response) => {
@@ -424,25 +456,40 @@ export const assignUserGroups = async (req: Request, res: Response) => {
       data: { roles, userGroups: { set: groupIds.map((id: string) => ({ id })) } }
     });
     res.json(user);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('assignUserGroups error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };
 
 export const getCurrencies = async (req: Request, res: Response) => {
   try {
     const currencies = await prisma.currency.findMany({ where: { isActive: true } });
     res.json(currencies);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('getCurrencies error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };
 
 export const syncCurrencies = async (req: Request, res: Response) => {
-  try { await updateExchangeRates(); res.json({ message: "OK" }); } catch (e: any) { res.status(500).json({ error: e.message }); }
+  try { 
+    await updateExchangeRates(); 
+    res.json({ message: "OK" }); 
+  } catch (e: any) { 
+    console.error('syncCurrencies error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message }); 
+  }
 };
 
 export const getLoanConfigs = async (req: Request, res: Response) => {
   try {
     const configs = await prisma.loanConfig.findMany({ orderBy: { code: 'asc' } });
     res.json(configs);
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
+  } catch (error: any) {
+    console.error('getLoanConfigs error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
 };
 
 export const createLoanConfig = async (req: Request, res: Response) => {
@@ -459,7 +506,10 @@ export const createLoanConfig = async (req: Request, res: Response) => {
       data: { code, rate: parseFloat(rate), duration: parseInt(duration) }
     });
     res.status(201).json(config);
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
+  } catch (error: any) {
+    console.error('createLoanConfig error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
 };
 
 export const updateLoanConfig = async (req: Request, res: Response) => {
@@ -471,7 +521,10 @@ export const updateLoanConfig = async (req: Request, res: Response) => {
       data: { code, rate: parseFloat(rate), duration: parseInt(duration) }
     });
     res.json(config);
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
+  } catch (error: any) {
+    console.error('updateLoanConfig error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
 };
 
 export const deleteLoanConfig = async (req: Request, res: Response) => {
@@ -479,7 +532,10 @@ export const deleteLoanConfig = async (req: Request, res: Response) => {
     const { id } = req.params;
     await prisma.loanConfig.delete({ where: { id: id as string } });
     res.json({ message: 'Configuration supprimée' });
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
+  } catch (error: any) {
+    console.error('deleteLoanConfig error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
 };
 
 export const updateUserKYC = async (req: Request, res: Response) => {
@@ -495,5 +551,8 @@ export const updateUserKYC = async (req: Request, res: Response) => {
       }
     });
     res.json(user);
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    console.error('updateUserKYC error:', e);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
+  }
 };

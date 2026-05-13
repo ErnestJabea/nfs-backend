@@ -34,7 +34,8 @@ export const getUserTransactions = async (req: any, res: Response) => {
 
     res.json({ data: transactions.map(mapTransaction) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getUserTransactions error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -49,7 +50,8 @@ export const getCreditListPending = async (req: Request, res: Response) => {
     });
     res.json({ data: transactions.map(mapTransaction) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getCreditListPending error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
@@ -70,7 +72,8 @@ export const getCumulCredit = async (req: Request, res: Response) => {
     const total = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
     res.json({ data: total.toString() });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('getCumulCredit error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
