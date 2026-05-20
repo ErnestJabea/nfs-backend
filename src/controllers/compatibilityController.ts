@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 export const getCotisations = async (req: Request, res: Response) => {
   try {
-    const cotisations = await prisma.tontineGroup.findMany();
+    const cotisations = await prisma.cotisationGroup.findMany();
     const mapped = cotisations.map(c => ({
       ...c,
       _id: c.id,
@@ -19,12 +19,16 @@ export const getCotisations = async (req: Request, res: Response) => {
 };
 
 
+import { BalanceService } from '../services/balanceService';
+
 export const getProviderByCode = async (req: Request, res: Response) => {
   try {
     const { code } = req.params;
+    const globalBalance = await BalanceService.getGlobalBalance();
+
     const accounts = [
-      { id: "1", type: "PRINCIPAL", currentBalance: 150000, availableBalance: 150000, currency: "XAF" },
-      { id: "2", type: "EPARGNE", currentBalance: 75000, availableBalance: 75000, currency: "XAF" }
+      { id: "1", type: "PRINCIPAL", currentBalance: globalBalance.totalPrincipal || 0, availableBalance: globalBalance.totalPrincipal || 0, currency: "XAF" },
+      { id: "2", type: "EPARGNE", currentBalance: globalBalance.totalSavings || 0, availableBalance: globalBalance.totalSavings || 0, currency: "XAF" }
     ];
     res.json({
       data: {

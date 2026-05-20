@@ -42,14 +42,18 @@ model User {
   createdAt       DateTime? @default(now())
   updatedAt       DateTime? @updatedAt
 
+  referredBy      User?     @relation("UserReferrals", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  referredById    String?   @db.ObjectId
+  referrals       User[]    @relation("UserReferrals")
+
   accountIds      String[]  @db.ObjectId @map("accountList")
   transactions    Transaction[]
 
   userGroups      UserGroup[] @relation(fields: [userGroupIds], references: [id])
   userGroupIds    String[]    @db.ObjectId
   
-  tontineGroups   TontineGroup[] @relation(fields: [tontineGroupIds], references: [id])
-  tontineGroupIds String[]       @db.ObjectId
+  cotisationGroups   CotisationGroup[] @relation(fields: [cotisationGroupIds], references: [id])
+  cotisationGroupIds String[]          @db.ObjectId
   
   loans           Loan[]
 
@@ -105,7 +109,7 @@ model Transaction {
   @@map("transactions")
 }
 
-model TontineGroup {
+model CotisationGroup {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   name            String
   code            String?  @unique
@@ -171,3 +175,14 @@ model PasswordReset {
   @@map("password_resets")
 }
 
+model SystemBalance {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  code              String   @unique @default("NFS_GLOBAL")
+  totalSavings      Float    @default(0)
+  totalPrincipal    Float    @default(0)
+  totalLoans        Float    @default(0)
+  availableLiquidity Float    @default(0)
+  lastUpdated       DateTime @default(now())
+
+  @@map("system_balances")
+}

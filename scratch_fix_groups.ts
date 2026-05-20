@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   try {
-    const result = await prisma.tontineGroup.updateMany({
+    const result = await prisma.cotisationGroup.updateMany({
       where: {
         OR: [
           { status: null },

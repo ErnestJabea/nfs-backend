@@ -3,3 +3,19 @@ node_modules
 .env
 
 /generated/prisma
+dev.db
+debug_logs.txt
+scratch_*.ts
+scratch_*.js
+check*.ts
+check*.js
+list*.ts
+list*.js
+inspect*.js
+test*.js
+migrate.js
+seed*.js
+fix-*.ts
+sync-*.ts
+deep-inspect.js
+delete-duplicate.js

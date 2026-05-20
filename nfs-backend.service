@@ -1,0 +1,19 @@
+[Unit]
+Description=NFS Backend API (Node.js / Express)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/nfs-backend
+ExecStart=/usr/bin/node -r ts-node/register/transpile-only src/index.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=nfs-backend
+Environment=NODE_ENV=production
+EnvironmentFile=/var/www/nfs-backend/.env
+
+[Install]
+WantedBy=multi-user.target

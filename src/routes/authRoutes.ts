@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { register, login, adminLogin, getProfile, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity } from '../controllers/authController';
-
+import { register, login, adminLogin, getProfile, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData } from '../controllers/authController';
 
 import { getCotisations, getProviderByCode, getPrincipalNfs } from '../controllers/compatibilityController';
 import { getUserTransactions, getCreditListPending, getCumulCredit, generateInvoice } from '../controllers/transactionController';
@@ -8,8 +7,16 @@ import { getUserTransactions, getCreditListPending, getCumulCredit, generateInvo
 
 import { authMiddleware } from '../middlewares/authMiddleware';
 
+import { debugLog } from '../controllers/authController';
+
 const router = Router();
 
+router.get('/ping', (req, res) => {
+  debugLog("PING REQUEST RECEIVED");
+  res.json({ status: "ok", time: new Date().toISOString(), message: "BACKEND REACHABLE" });
+});
+
+router.get('/mobile-dashboard', authMiddleware, getDashboardData);
 router.post('/register', register);
 router.post('/login', login);
 router.post('/admin/login', adminLogin);

@@ -8,11 +8,33 @@ export const getUsers = async (req: Request, res: Response) => {
   try {
     const roleParam = req.query.role;
     const role = typeof roleParam === 'string' ? roleParam : undefined;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 0;
     
-    const users = await prisma.user.findMany({
-      where: role ? { roles: { has: role } } : {},
-      orderBy: { createdAt: 'desc' }
-    });
+    const whereClause = role ? { roles: { has: role } } : {};
+
+    let users;
+    let total = 0;
+
+    if (limit > 0) {
+      const skip = (page - 1) * limit;
+      const [fetchedUsers, totalCount] = await Promise.all([
+        prisma.user.findMany({
+          where: whereClause,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' }
+        }),
+        prisma.user.count({ where: whereClause })
+      ]);
+      users = fetchedUsers;
+      total = totalCount;
+    } else {
+      users = await prisma.user.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' }
+      });
+    }
 
     const allAccountIds = users.flatMap(u => u.accountIds || []);
     const accounts = await prisma.account.findMany({
@@ -27,6 +49,10 @@ export const getUsers = async (req: Request, res: Response) => {
         accounts: computedAccounts
       };
     });
+
+    if (limit > 0) {
+      return res.json({ data: mappedUsers, total, page, totalPages: Math.ceil(total / limit) });
+    }
 
     res.json(mappedUsers);
   } catch (error: any) {
@@ -201,49 +227,69 @@ export const rejectTransaction = async (req: any, res: Response) => {
 
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
-    const userCount = await prisma.user.count();
-    const transactionCount = await prisma.transaction.count();
-    const pendingLoans = await prisma.loan.count({ where: { status: 'PENDING' } });
-    // Calcul des volumes par type de compte
-    const allAccounts = await prisma.account.findMany();
-    
-    const volumePrincipal = allAccounts
-      .filter(a => a.type === 'PRINCIPAL')
-      .reduce((sum, a) => sum + (a.currentBalance || 0), 0);
-      
-    const volumeEpargne = allAccounts
-      .filter(a => a.type === 'EPARGNE')
-      .reduce((sum, a) => sum + (a.currentBalance || 0), 0);
-      
-    const volumeCaution = allAccounts
-      .filter(a => a.type === 'CAUTION')
-      .reduce((sum, a) => sum + (a.currentBalance || 0), 0);
-      
-    const volumeTontine = allAccounts
-      .filter(a => a.type === 'DJANGUI_NON_PERCU' || a.type === 'DJANGUI_PERCU')
-      .reduce((sum, a) => sum + (a.currentBalance || 0), 0);
+    const [userCount, transactionCount, pendingLoans, activeCotisations, accountGroups] = await Promise.all([
+      prisma.user.count(),
+      prisma.transaction.count(),
+      prisma.loan.count({ where: { status: 'PENDING' } }),
+      prisma.cotisationGroup.count({ where: { status: 'ACTIF' } }),
+      prisma.account.groupBy({
+        by: ['type'],
+        _sum: {
+          currentBalance: true,
+          availableBalance: true
+        }
+      })
+    ]);
 
-    const totalAssets = volumePrincipal + volumeEpargne + volumeCaution + volumeTontine;
+    // Calcul de la capacité d'avalise totale réelle (somme des capacités individuelles >= 0)
+    const users = await prisma.user.findMany({ select: { accountIds: true } });
+    const allAccountIds = users.flatMap(u => u.accountIds || []);
+    const accounts = await prisma.account.findMany({
+      where: { id: { in: allAccountIds } }
+    });
 
-    // Calcul de la capacité d'avalise totale du système
-    const computedAccounts = computeAvalise(allAccounts);
-    const totalAvaliseCapacity = computedAccounts
-      .filter(a => a.type === 'AVALISE')
-      .reduce((sum, a) => sum + (a.availableBalance || 0), 0);
+    let volumePrincipal = 0;
+    let volumeEpargne = 0;
+    let volumeCaution = 0;
+    let volumeCotisation = 0;
+    let totalAvaliseCapacity = 0;
 
-    const activeTontines = await prisma.tontineGroup.count({ where: { status: 'ACTIF' } });
+    // Calcul basé uniquement sur les comptes rattachés à des utilisateurs (exclut les comptes Système/Provider)
+    for (const user of users) {
+      const userAccounts = accounts.filter(a => (user.accountIds || []).includes(a.id));
+      const getBal = (type: string) => userAccounts.find(a => a.type === type)?.currentBalance || 0;
+      
+      // Volume par type
+      volumePrincipal += getBal('PRINCIPAL');
+      volumeEpargne += getBal('EPARGNE');
+      volumeCaution += getBal('CAUTION');
+      volumeCotisation += (getBal('DJANGUI_NON_PERCU') || getBal('DJANGUI_PERCU') || getBal('DJANGUI_NONPERCU'));
+
+      // Capacité d'avalise (clampée à 0)
+      const epargne = getBal('EPARGNE');
+      const djanguiNonPercu = getBal('DJANGUI_NON_PERCU') || getBal('DJANGUI_NONPERCU');
+      const credit = getBal('CREDIT');
+      const pret = getBal('PRET');
+      const creditAvalise = getBal('CREDIT_AVALISE');
+      const parrainage = getBal('PARRAINAGE');
+      
+      const capacity = (epargne + djanguiNonPercu) - (credit + pret + creditAvalise + parrainage);
+      totalAvaliseCapacity += Math.max(0, capacity);
+    }
+
+    const totalAssets = volumePrincipal + volumeEpargne + volumeCaution + volumeCotisation;
 
     res.json({ 
       userCount, 
       volumePrincipal,
       volumeEpargne,
       volumeCaution,
-      volumeTontine,
+      volumeCotisation,
       totalAssets,
       transactionCount, 
       pendingLoans,
       totalAvaliseCapacity,
-      activeTontines
+      activeCotisations
     });
   } catch (error: any) {
     console.error('getDashboardStats error:', error);
@@ -251,53 +297,53 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   }
 };
 
-export const createTontineGroup = async (req: Request, res: Response) => {
+export const createCotisationGroup = async (req: Request, res: Response) => {
   try {
     const data = req.body;
-    const group = await prisma.tontineGroup.create({ data: { ...data, status: 'ACTIF' } });
+    const group = await prisma.cotisationGroup.create({ data: { ...data, status: 'ACTIF' } });
     res.status(201).json(group);
   } catch (error: any) {
-    console.error('createTontineGroup error:', error);
+    console.error('createCotisationGroup error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
-export const getTontines = async (req: Request, res: Response) => {
+export const getCotisations = async (req: Request, res: Response) => {
   try {
-    const groups = await prisma.tontineGroup.findMany({ include: { members: true } });
+    const groups = await prisma.cotisationGroup.findMany({ include: { members: true } });
     res.json(groups);
   } catch (error: any) {
-    console.error('getTontines error:', error);
+    console.error('getCotisations error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
-export const addParticipantToTontine = async (req: Request, res: Response) => {
+export const addParticipantToCotisation = async (req: Request, res: Response) => {
   try {
     const { groupId, userId } = req.body;
-    const updated = await prisma.tontineGroup.update({
+    const updated = await prisma.cotisationGroup.update({
       where: { id: groupId },
       data: { members: { connect: { id: userId } } },
       include: { members: true }
     });
     res.json(updated);
   } catch (error: any) {
-    console.error('addParticipantToTontine error:', error);
+    console.error('addParticipantToCotisation error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
-export const removeParticipantFromTontine = async (req: Request, res: Response) => {
+export const removeParticipantFromCotisation = async (req: Request, res: Response) => {
   try {
     const { groupId, userId } = req.body;
-    const updated = await prisma.tontineGroup.update({
+    const updated = await prisma.cotisationGroup.update({
       where: { id: groupId },
       data: { members: { disconnect: { id: userId } } },
       include: { members: true }
     });
     res.json(updated);
   } catch (error: any) {
-    console.error('removeParticipantFromTontine error:', error);
+    console.error('removeParticipantFromCotisation error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
@@ -397,6 +443,23 @@ export const createLoan = async (req: any, res: Response) => {
 
 export const getTransactions = async (req: Request, res: Response) => {
   try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 0;
+
+    if (limit > 0) {
+      const skip = (page - 1) * limit;
+      const [transactions, total] = await Promise.all([
+        prisma.transaction.findMany({
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: { user: true }
+        }),
+        prisma.transaction.count()
+      ]);
+      return res.json({ data: transactions, total, page, totalPages: Math.ceil(total / limit) });
+    }
+
     const transactions = await prisma.transaction.findMany({ orderBy: { createdAt: 'desc' }, include: { user: true } });
     res.json(transactions);
   } catch (error: any) {
@@ -406,11 +469,58 @@ export const getTransactions = async (req: Request, res: Response) => {
 };
 
 export const getReferralStats = async (req: Request, res: Response) => {
-  try { 
-    res.json([]); 
-  } catch (error: any) { 
+  try {
+    const [totalUsers, referredUsers, parrainageAccounts] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { referredById: { not: null } } }),
+      prisma.account.aggregate({
+        where: { type: 'PARRAINAGE' },
+        _sum: { currentBalance: true }
+      })
+    ]);
+
+    const totalCommissions = parrainageAccounts._sum.currentBalance || 0;
+    const conversionRate = totalUsers > 0 ? (referredUsers / totalUsers) * 100 : 0;
+
+    // Get top referrers
+    const topReferrersRaw = await prisma.user.groupBy({
+      by: ['referredById'],
+      _count: { id: true },
+      where: { referredById: { not: null } },
+      orderBy: { _count: { id: 'desc' } },
+      take: 10
+    });
+
+    const topReferrers = await Promise.all(topReferrersRaw.map(async (ref) => {
+      const user = await prisma.user.findUnique({
+        where: { id: ref.referredById! }
+      });
+      
+      const parrainageAcc = await prisma.account.findFirst({
+        where: {
+          id: { in: user?.accountIds || [] },
+          type: 'PARRAINAGE'
+        }
+      });
+
+      return {
+        id: user?.id,
+        name: `${user?.firstName} ${user?.lastName}`,
+        code: user?.referralCode,
+        referralsCount: ref._count.id,
+        commissions: parrainageAcc?.currentBalance || 0
+      };
+    }));
+
+    res.json({
+      totalReferrals: referredUsers,
+      totalCommissions,
+      conversionRate: Math.round(conversionRate),
+      topReferrers
+    });
+  } catch (error: any) {
     console.error('getReferralStats error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message }); 
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 

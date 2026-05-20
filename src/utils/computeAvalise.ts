@@ -3,14 +3,15 @@ export const computeAvalise = (accounts: any[]) => {
   
   const epargne = getBalance('EPARGNE');
   // Le Njangui non perçu est la totalité des cagnottes attendues
-  const djanguiNonPercu = getBalance('DJANGUI_NON_PERCU');
+  const djanguiNonPercu = getBalance('DJANGUI_NON_PERCU') || getBalance('DJANGUI_NONPERCU');
   
   const credit = getBalance('CREDIT');
   const pret = getBalance('PRET');
   const creditAvalise = getBalance('CREDIT_AVALISE');
   const parrainage = getBalance('PARRAINAGE');
   
-  const avaliseValue = (epargne + djanguiNonPercu) - (credit + pret + creditAvalise + parrainage);
+  // La capacité ne peut pas être négative (règle métier)
+  const avaliseValue = Math.max(0, (epargne + djanguiNonPercu) - (credit + pret + creditAvalise + parrainage));
   
   const avaliseAcc = accounts.find(a => a.type === 'AVALISE');
   if (avaliseAcc) {

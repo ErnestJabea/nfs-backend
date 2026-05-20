@@ -4,8 +4,8 @@ import {
   createUser,
   updateUserStatus, 
   getDashboardStats, 
-  createTontineGroup,
-  getTontines,
+  createCotisationGroup,
+  getCotisations,
   getLoans,
   updateLoanStatus,
   getTransactions,
@@ -21,8 +21,8 @@ import {
   updateUserProfile,
   getCurrencies,
   syncCurrencies,
-  addParticipantToTontine,
-  removeParticipantFromTontine,
+  addParticipantToCotisation,
+  removeParticipantFromCotisation,
   payCotisationFromCaution,
   payCotisationInCash,
   createLoan,
@@ -45,12 +45,23 @@ router.patch('/users/:id', updateUserStatus);
 router.put('/users/:id/profile', updateUserProfile);
 router.post('/users/:id/credit', creditUserAccount);
 router.get('/stats', getDashboardStats);
-router.get('/tontines', getTontines);
-router.post('/tontines', createTontineGroup);
-router.post('/tontines/participants', addParticipantToTontine);
-router.post('/tontines/remove-participant', removeParticipantFromTontine);
+
+// Legacy Tontine routes for backward compatibility
+router.get('/tontines', getCotisations);
+router.post('/tontines', createCotisationGroup);
+router.post('/tontines/participants', addParticipantToCotisation);
+router.post('/tontines/remove-participant', removeParticipantFromCotisation);
 router.post('/tontines/pay-caution', payCotisationFromCaution);
 router.post('/tontines/pay-cash', payCotisationInCash);
+
+// Cotisation routes
+router.get('/cotisations', getCotisations);
+router.post('/cotisations', createCotisationGroup);
+router.post('/cotisations/participants', addParticipantToCotisation);
+router.post('/cotisations/remove-participant', removeParticipantFromCotisation);
+router.post('/cotisations/pay-caution', payCotisationFromCaution);
+router.post('/cotisations/pay-cash', payCotisationInCash);
+
 router.get('/loans', getLoans);
 router.post('/loans', createLoan);
 router.patch('/loans/:id', updateLoanStatus);

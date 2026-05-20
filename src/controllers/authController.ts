@@ -6,6 +6,16 @@ import { computeAvalise } from '../utils/computeAvalise';
 import { sendResetCode } from '../services/mailService';
 
 
+import fs from 'fs';
+import path from 'path';
+
+const logFile = path.join(__dirname, '../../debug_logs.txt');
+export const debugLog = (msg: string) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFileSync(logFile, line);
+  console.log(msg);
+};
+
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 
 export const register = async (req: Request, res: Response) => {
@@ -39,6 +49,8 @@ export const register = async (req: Request, res: Response) => {
         lastName,
         email,
         referralCode: userReferralCode,
+        referredById: (referredBy as any)?.id || null,
+        referrerName: referredBy ? `${(referredBy as any).firstName} ${(referredBy as any).lastName}` : null
       },
     });
 
@@ -259,6 +271,89 @@ export const getProfile = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getDashboardData = async (req: any, res: Response) => {
+  debugLog("DASHBOARD DATA REQUEST RECEIVED");
+  try {
+    const targetId = req.user?.sub || req.user?.userId;
+    if (!targetId) return res.status(401).json({ error: "Invalid token" });
+
+    const [user, cotisations, globalBalance] = await Promise.all([
+      prisma.user.findUnique({ where: { id: targetId } }),
+      prisma.cotisationGroup.findMany(),
+      import('../services/balanceService').then(m => m.BalanceService.getGlobalBalance())
+    ]);
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const accounts = await prisma.account.findMany({
+      where: { id: { in: (user as any).accountIds || [] } }
+    });
+    
+    debugLog(`DEBUG: Found ${accounts.length} accounts for Ernest`);
+    accounts.forEach(a => debugLog(`DEBUG: Account ${a.type} = ${a.currentBalance}`));
+
+    const computedAccounts = computeAvalise(accounts);
+
+    const mobileAccounts = [
+      computedAccounts.find(a => a.type === 'AVALISE') || { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'PRINCIPAL') || { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'EPARGNE') || { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'CREDIT') || { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'INTERET') || { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'PRET') || { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: 'XAF' }
+    ];
+
+    const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user as any;
+
+    const structuredUser = {
+      ...lightUser,
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      fluxIn: (user as any).fluxIn || 0,
+      fluxOut: (user as any).fluxOut || 0,
+      address: {
+        streetName: (user as any).address || "",
+        city: (user as any).city || "",
+        province: (user as any).province || "",
+        postalCode: (user as any).postalCode || "",
+      },
+      identity: {
+        typeOfIdentification: (user as any).documentType || "CNI",
+        identificationNumber: (user as any).documentNumber || "",
+      },
+      cotisationList: (user as any).cotisationList || [],
+      tontineList: (user as any).tontineList || [],
+      accountList: mobileAccounts,
+      accounts: mobileAccounts
+    };
+
+    const responseData = {
+      data: {
+        user: structuredUser,
+        cotisations: cotisations.map(c => ({ ...c, _id: c.id })),
+        soldeNfs: globalBalance.totalSavings || 0
+      }
+    };
+    
+    debugLog("SENDING DASHBOARD DATA: " + JSON.stringify({
+      principal: (structuredUser as any).accountList[1].currentBalance,
+      epargne: (structuredUser as any).accountList[2].currentBalance,
+      soldeNfs: responseData.data.soldeNfs
+    }));
+
+    res.json(responseData);
+
+  } catch (error: any) {
+    console.error("Dashboard error:", error);
+    res.status(500).json({ error: error.message });
   }
 };
 

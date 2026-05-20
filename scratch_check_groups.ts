@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   try {
-    const groups = await prisma.tontineGroup.findMany();
+    const groups = await prisma.cotisationGroup.findMany();
     console.log(`Groups found: ${groups.length}`);
     console.log(JSON.stringify(groups, null, 2));
   } catch (e) {

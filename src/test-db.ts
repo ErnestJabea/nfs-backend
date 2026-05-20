@@ -7,8 +7,8 @@ async function main() {
   const userCount = await prisma.user.count();
   console.log(`Nombre d'utilisateurs : ${userCount}`);
   
-  const groups = await prisma.tontineGroup.findMany();
-  console.log(`Nombre de groupes de tontine : ${groups.length}`);
+  const groups = await prisma.cotisationGroup.findMany();
+  console.log(`Nombre de groupes de cotisation : ${groups.length}`);
   
   console.log('--- Fin de vérification ---');
 }
