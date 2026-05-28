@@ -44,6 +44,11 @@ app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'Welcome to NFS App API' });
 });
 
+// Health Check Route
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 setupSwagger(app);
 
 // Error Handling Middleware
