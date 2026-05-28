@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { startPenaltyCron } from './cron/penaltyCron';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
@@ -17,7 +19,13 @@ const PORT = process.env.PORT || 5000;
 
 // Middlewares
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    callback(null, true);
+  },
+  credentials: true
+}));
+app.use(cookieParser());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -44,9 +52,10 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
+startPenaltyCron();
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Available at http://localhost:${PORT}`);
   initCurrencyJob();
 });
-
+// trigger nodemon restart v3

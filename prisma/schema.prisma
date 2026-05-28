@@ -40,6 +40,9 @@ model User {
   emergencyContacts Json?   @default("[]")
   kycStatus       String?   @default("IDLE") // IDLE, PENDING, APPROVED, REJECTED
   createdAt       DateTime? @default(now())
+  approvedAt      DateTime?
+  dueDate         DateTime?
+  penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
 
   referredBy      User?     @relation("UserReferrals", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -72,7 +75,11 @@ model Loan {
   status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
   avalistes       Json?     @default("[]")     // List of { userId, amount, interestShare }
   createdBy       String?
+  validatedBy     String[]  @default([])
   createdAt       DateTime? @default(now())
+  approvedAt      DateTime?
+  dueDate         DateTime?
+  penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
 
   @@map("loans")
@@ -105,6 +112,9 @@ model Transaction {
   currency          String?   @default("XAF")
   operation         Json?
   createdAt       DateTime? @default(now())
+  approvedAt      DateTime?
+  dueDate         DateTime?
+  penaltyAmount   Float?    @default(0)
 
   @@map("transactions")
 }
@@ -120,6 +130,9 @@ model CotisationGroup {
   currency        String?  @default("XAF")
   status          String?  @default("ACTIF")
   createdAt       DateTime? @default(now())
+  approvedAt      DateTime?
+  dueDate         DateTime?
+  penaltyAmount   Float?    @default(0)
 
   members         User[]   @relation(fields: [memberIds], references: [id])
   memberIds       String[] @db.ObjectId
@@ -130,7 +143,7 @@ model CotisationGroup {
 model Currency {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   code        String   @unique // e.g., "XAF", "EUR", "USD"
-  symbol      String   // e.g., "FCFA", "€", "$"
+  symbol      String   // e.g., "FCFA", "â‚¬", "$"
   name        String   // e.g., "Franc CFA", "Euro", "US Dollar"
   isActive    Boolean  @default(true)
   rateToBase  Float    @default(1.0) // Rate relative to XAF
@@ -186,3 +199,19 @@ model SystemBalance {
 
   @@map("system_balances")
 }
+
+model TransferFeeConfig {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  minAmount   Float    // Montant minimum de la tranche
+  maxAmount   Float    // Montant maximum de la tranche
+  rate        Float    // Taux de frais en pourcentage (ex: 1.5 pour 1.5%)
+  flatFee     Float    @default(0) // Frais fixes
+  currency    String   @default("XAF") // Devise de la tranche
+  isActive    Boolean  @default(true) // Statut de la tranche
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
+
+  @@map("transfer_fee_configs")
+}
+
+

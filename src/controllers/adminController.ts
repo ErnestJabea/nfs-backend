@@ -4,6 +4,14 @@ import { updateExchangeRates } from '../services/currencyService';
 import { sendWelcomeEmail } from '../utils/mailer';
 import { computeAvalise } from '../utils/computeAvalise';
 
+const parseRoles = (body: any): string[] | undefined => {
+  const r = body.roles || body.role;
+  if (!r) return undefined;
+  if (Array.isArray(r)) return r;
+  if (typeof r === 'string') return [r];
+  return undefined;
+};
+
 export const getUsers = async (req: Request, res: Response) => {
   try {
     const roleParam = req.query.role;
@@ -23,7 +31,8 @@ export const getUsers = async (req: Request, res: Response) => {
           where: whereClause,
           skip,
           take: limit,
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: 'desc' },
+          include: { userGroups: true }
         }),
         prisma.user.count({ where: whereClause })
       ]);
@@ -32,7 +41,8 @@ export const getUsers = async (req: Request, res: Response) => {
     } else {
       users = await prisma.user.findMany({
         where: whereClause,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: { userGroups: true }
       });
     }
 
@@ -84,12 +94,16 @@ export const createUser = async (req: Request, res: Response) => {
     ));
 
     const accountIds = createdAccounts.map(a => a.id);
+    const accountNumber = "NFS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const uniqueKey = "KEY-" + Math.random().toString(36).substring(2, 12).toUpperCase();
+    const roles = parseRoles(req.body) || ["CLIENT"];
 
     const newUser = await prisma.user.create({
       data: {
         firstName, lastName, phone, email: email && email.trim() !== '' ? email.trim() : null,
-        password: hashedPassword, roles: [role || "CLIENT"], activated: true, verified: false,
-        country: country || "Cameroun", referrerName, address, addressImageUrl, accountIds
+        password: hashedPassword, roles: roles, activated: true, verified: false,
+        country: country || "Cameroun", referrerName, address, addressImageUrl, accountIds,
+        accountNumber, uniqueKey
       }
     });
 
@@ -118,18 +132,26 @@ export const updateUserStatus = async (req: Request, res: Response) => {
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
-
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const data = req.body;
+    const data = { ...req.body };
+    const parsedRoles = parseRoles(data);
+    if (parsedRoles) {
+      data.roles = parsedRoles;
+      delete data.role;
+    } else {
+      delete data.role;
+      delete data.roles;
+    }
     const updatedUser = await prisma.user.update({
       where: { id: id as string },
       data: {
         ...data,
         joiningYear: data.joiningYear ? parseInt(data.joiningYear) : undefined,
         averageIncome: data.averageIncome ? parseFloat(data.averageIncome) : undefined
-      }
+      },
+      include: { userGroups: true }
     });
     res.json(updatedUser);
   } catch (error: any) {
@@ -142,17 +164,64 @@ export const creditUserAccount = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { amount, description, accountType = 'PRINCIPAL', sourceAccountType, currency = 'XAF' } = req.body;
-    const adminUser = req.user ? await prisma.user.findUnique({ where: { id: req.user.userId } }) : null;
-    const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin Système';
+    const adminId = req.user?.userId || req.user?.sub || req.user?.id;
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
+    const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin SystÃ¨me';
+
+    const upperType = accountType.toUpperCase();
+    let opType = 'deposit';
+    let opCode = `DEPOT_${accountType}_${Date.now()}`;
+    let opName = `DÃ©pÃ´t ${accountType}`;
+    
+    if (upperType === 'EPARGNE') {
+      opType = 'epargne';
+      opCode = `EPARGNE_${Date.now()}`;
+      opName = 'DÃ©pÃ´t Ã‰pargne';
+    } else if (upperType === 'CAUTION') {
+      opType = 'caution';
+      opCode = `CAUTION_${Date.now()}`;
+      opName = 'DÃ©pÃ´t Caution';
+    } else if (upperType === 'CREDIT' || upperType === 'PRET') {
+      opType = 'credit';
+      opCode = `EMPRUNT_${Date.now()}`;
+      opName = 'DÃ©blocage CrÃ©dit';
+    } else if (upperType === 'PRINCIPAL') {
+      opType = 'principal';
+      opCode = `DEPOT_WALLET_${Date.now()}`;
+      opName = 'DÃ©pÃ´t Wallet';
+    } else if (upperType === 'PARRAINAGE') {
+      opType = 'parrainage';
+      opCode = `PARRAINAGE_${Date.now()}`;
+      opName = 'DÃ©pÃ´t Parrainage';
+    } else if (upperType.includes('DJANGUI')) {
+      opType = 'djangui';
+      opCode = `DJANGUI_${Date.now()}`;
+      opName = 'DÃ©pÃ´t Djangui';
+    }
+
+    const dateStr = new Date().toLocaleDateString('fr-FR').replace(/\//g, '-');
 
     const transaction = await prisma.transaction.create({
       data: {
-        userId: id as string, purpose: description || `DÉPÔT ${accountType}`, amount, currency,
-        status: 'PENDING', transactionRef: `NFS-${Date.now()}`, createdBy: adminName,
-        sourceAccountType: sourceAccountType || null, targetAccountType: accountType
+        userId: id as string,
+        purpose: description || opName,
+        amount: Number(amount) || 0,
+        currency,
+        status: 'PENDING',
+        transactionRef: `NFS-${Date.now()}`,
+        createdBy: adminName,
+        sourceAccountType: sourceAccountType || null,
+        targetAccountType: accountType,
+        operation: {
+          type: opType,
+          code: opCode,
+          reference: `${dateStr}.${upperType.substring(0, 2)}.${id}`,
+          amount: Number(amount) || 0,
+          date: new Date().toISOString()
+        }
       }
     });
-    res.json({ message: "Opération soumise au COMEX", transaction });
+    res.json({ message: "OpÃ©ration soumise au COMEX", transaction });
   } catch (error: any) {
     console.error('creditUserAccount error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -162,8 +231,9 @@ export const creditUserAccount = async (req: any, res: Response) => {
 export const validateTransaction = async (req: any, res: Response) => {
   try {
     const { txId } = req.params;
-    const adminUser = req.user ? await prisma.user.findUnique({ where: { id: req.user.userId } }) : null;
-    const adminName = `${adminUser?.firstName} ${adminUser?.lastName}`;
+    const adminId = req.user?.userId || req.user?.sub || req.user?.id;
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
+    const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : '';
     const tx = await prisma.transaction.findUnique({ where: { id: txId } });
     
     if (!tx || tx.status !== 'PENDING') return res.status(400).json({ error: "Transaction invalide." });
@@ -175,35 +245,150 @@ export const validateTransaction = async (req: any, res: Response) => {
     }
 
     // Empêcher l'auto-validation
-    if (tx.createdBy === adminName) {
+    if (tx.createdBy && adminName && tx.createdBy === adminName) {
       return res.status(403).json({ error: "Vous ne pouvez pas valider une transaction que vous avez vous-même initiée." });
     }
 
-    if (tx.validatedBy.includes(adminName)) return res.status(400).json({ error: "Vous avez déjà validé cette transaction." });
+    if (adminName && tx.validatedBy.includes(adminName)) {
+      return res.status(400).json({ error: "Vous avez déjà validé cette transaction." });
+    }
 
     const newValidators = [...tx.validatedBy, adminName];
 
-    if (newValidators.length >= 3) {
-      const user = await prisma.user.findUnique({ where: { id: tx.userId! } });
-      const accounts = await prisma.account.findMany({ where: { id: { in: user!.accountIds } } });
-      let targetAccount = accounts.find(a => a.type === tx.targetAccountType);
-      
-      await prisma.account.update({
-        where: { id: targetAccount!.id },
-        data: { currentBalance: { increment: tx.amount! }, availableBalance: { increment: tx.amount! } }
+    // Vérifier s'il s'agit d'un transfert lié
+    const isTransfer = tx.transactionRef?.startsWith('TR_REF_');
+
+    if (isTransfer) {
+      const transferRef = tx.transactionRef!.substring(0, tx.transactionRef!.lastIndexOf('_'));
+      const linkedTransactions = await prisma.transaction.findMany({
+        where: {
+          transactionRef: {
+            in: [`${transferRef}_OUT`, `${transferRef}_IN`]
+          }
+        }
       });
 
-      await prisma.transaction.update({
-        where: { id: tx.id },
-        data: { status: 'SUCCESS', validatedBy: newValidators }
-      });
-      res.json({ message: "Validé (3/3)" });
+      if (linkedTransactions.length !== 2) {
+        return res.status(400).json({ error: "Impossible de localiser la transaction de contrepartie liée à ce transfert." });
+      }
+
+      const senderTx = linkedTransactions.find((t: any) => t.transactionRef!.endsWith('_OUT'));
+      const recipientTx = linkedTransactions.find((t: any) => t.transactionRef!.endsWith('_IN'));
+
+      if (!senderTx || !recipientTx) {
+        return res.status(400).json({ error: "Les composants débit/crédit du transfert sont invalides." });
+      }
+
+      const mergedValidators = Array.from(new Set([...senderTx.validatedBy, ...recipientTx.validatedBy, adminName]));
+
+      if (mergedValidators.length < 2) {
+        // Première validation sur 2
+        await prisma.transaction.update({
+          where: { id: senderTx.id },
+          data: { validatedBy: mergedValidators }
+        });
+        const updatedRecipientTx = await prisma.transaction.update({
+          where: { id: recipientTx.id },
+          data: { validatedBy: mergedValidators }
+        });
+
+        return res.json({ 
+          message: `Validé (1/2) - Transfert en attente de la seconde signature.`, 
+          transaction: updatedRecipientTx 
+        });
+      } else {
+        // Deuxième validation : Exécuter les soldes de compte de manière atomique
+        const result = await prisma.$transaction(async (dbTx) => {
+          const senderUser = await dbTx.user.findUnique({ where: { id: senderTx.userId! } });
+          const recipientUser = await dbTx.user.findUnique({ where: { id: recipientTx.userId! } });
+
+          if (!senderUser || !recipientUser) {
+            throw new Error("L'expéditeur ou le destinataire du transfert est introuvable.");
+          }
+
+          const senderAccounts = await dbTx.account.findMany({ where: { id: { in: senderUser.accountIds } } });
+          const recipientAccounts = await dbTx.account.findMany({ where: { id: { in: recipientUser.accountIds } } });
+
+          const sourceAccount = senderAccounts.find(a => a.type === senderTx.sourceAccountType);
+          const destAccount = recipientAccounts.find(a => a.type === recipientTx.targetAccountType);
+
+          if (!sourceAccount || !destAccount) {
+            throw new Error("Le compte source ou le compte cible du transfert est introuvable.");
+          }
+
+          const sourceAmount = Math.abs(senderTx.amount || 0);
+          if (sourceAccount.availableBalance < sourceAmount) {
+            throw new Error(`Solde insuffisant sur le compte source (${sourceAccount.availableBalance} ${sourceAccount.currency}).`);
+          }
+
+          // Déduire chez l'expéditeur
+          await dbTx.account.update({
+            where: { id: sourceAccount.id },
+            data: {
+              currentBalance: { decrement: sourceAmount },
+              availableBalance: { decrement: sourceAmount }
+            }
+          });
+
+          // Ajouter chez le destinataire
+          const convertedAmount = recipientTx.amount || 0;
+          await dbTx.account.update({
+            where: { id: destAccount.id },
+            data: {
+              currentBalance: { increment: convertedAmount },
+              availableBalance: { increment: convertedAmount }
+            }
+          });
+
+          // Mettre à jour les deux transactions à SUCCESS
+          await dbTx.transaction.update({
+            where: { id: senderTx.id },
+            data: { status: 'SUCCESS', validatedBy: mergedValidators }
+          });
+
+          const updatedRecipient = await dbTx.transaction.update({
+            where: { id: recipientTx.id },
+            data: { status: 'SUCCESS', validatedBy: mergedValidators }
+          });
+
+          return updatedRecipient;
+        });
+
+        return res.json({ 
+          message: "Validé (2/2) - Transfert exécuté avec succès.", 
+          transaction: result 
+        });
+      }
     } else {
-      await prisma.transaction.update({
-        where: { id: tx.id },
-        data: { validatedBy: newValidators }
-      });
-      res.json({ message: `Validé (${newValidators.length}/3)` });
+      // Cas standard (Dépôt / Crédit direct)
+      if (newValidators.length < 2) {
+        const updatedTx = await prisma.transaction.update({
+          where: { id: tx.id },
+          data: { validatedBy: newValidators }
+        });
+        return res.json({ message: "Validé (1/2) - En attente de la seconde signature.", transaction: updatedTx });
+      } else {
+        const user = await prisma.user.findUnique({ where: { id: tx.userId! } });
+        const accounts = await prisma.account.findMany({ where: { id: { in: user!.accountIds } } });
+        let targetAccount = accounts.find(a => a.type === tx.targetAccountType);
+        
+        if (targetAccount) {
+          await prisma.account.update({
+            where: { id: targetAccount.id },
+            data: { 
+              currentBalance: { increment: tx.amount! }, 
+              availableBalance: { increment: tx.amount! } 
+            }
+          });
+        }
+
+        const updatedTx = await prisma.transaction.update({
+          where: { id: tx.id },
+          data: { status: 'SUCCESS', validatedBy: newValidators }
+        });
+
+        return res.json({ message: "Validé (2/2) - Transaction exécutée avec succès.", transaction: updatedTx });
+      }
     }
   } catch (error: any) {
     console.error('validateTransaction error:', error);
@@ -214,11 +399,25 @@ export const validateTransaction = async (req: any, res: Response) => {
 export const rejectTransaction = async (req: any, res: Response) => {
   try {
     const { txId } = req.params;
-    const tx = await prisma.transaction.update({
+    const tx = await prisma.transaction.findUnique({ where: { id: txId } });
+    if (!tx) return res.status(404).json({ error: "Transaction introuvable" });
+
+    // Si c'est un transfert, rejeter les deux côtés
+    if (tx.transactionRef?.startsWith('TR_REF_')) {
+      const transferRef = tx.transactionRef.substring(0, tx.transactionRef.lastIndexOf('_'));
+      await prisma.transaction.updateMany({
+        where: { transactionRef: { in: [`${transferRef}_OUT`, `${transferRef}_IN`] } },
+        data: { status: 'REJECTED' }
+      });
+      const updatedTx = await prisma.transaction.findUnique({ where: { id: txId } });
+      return res.json(updatedTx);
+    }
+
+    const updatedTx = await prisma.transaction.update({
       where: { id: txId },
       data: { status: 'REJECTED' }
     });
-    res.json(tx);
+    res.json(updatedTx);
   } catch (error: any) {
     console.error('rejectTransaction error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -227,7 +426,11 @@ export const rejectTransaction = async (req: any, res: Response) => {
 
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
-    const [userCount, transactionCount, pendingLoans, activeCotisations, accountGroups] = await Promise.all([
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const [userCount, transactionCount, pendingLoans, activeCotisations, accountGroups, approvedLoans] = await Promise.all([
       prisma.user.count(),
       prisma.transaction.count(),
       prisma.loan.count({ where: { status: 'PENDING' } }),
@@ -238,10 +441,19 @@ export const getDashboardStats = async (req: Request, res: Response) => {
           currentBalance: true,
           availableBalance: true
         }
+      }),
+      prisma.loan.findMany({
+        where: { status: 'APPROVED' },
+        include: { user: true }
       })
     ]);
 
-    // Calcul de la capacité d'avalise totale réelle (somme des capacités individuelles >= 0)
+    const maturingLoans = approvedLoans.filter(l => {
+      if (!l.dueDate) return false;
+      return l.dueDate.getMonth() === currentMonth && l.dueDate.getFullYear() === currentYear;
+    });
+
+    // Calcul de la capacitÃ© d'avalise totale rÃ©elle (somme des capacitÃ©s individuelles >= 0)
     const users = await prisma.user.findMany({ select: { accountIds: true } });
     const allAccountIds = users.flatMap(u => u.accountIds || []);
     const accounts = await prisma.account.findMany({
@@ -254,7 +466,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     let volumeCotisation = 0;
     let totalAvaliseCapacity = 0;
 
-    // Calcul basé uniquement sur les comptes rattachés à des utilisateurs (exclut les comptes Système/Provider)
+    // Calcul basÃ© uniquement sur les comptes rattachÃ©s Ã  des utilisateurs (exclut les comptes SystÃ¨me/Provider)
     for (const user of users) {
       const userAccounts = accounts.filter(a => (user.accountIds || []).includes(a.id));
       const getBal = (type: string) => userAccounts.find(a => a.type === type)?.currentBalance || 0;
@@ -265,7 +477,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       volumeCaution += getBal('CAUTION');
       volumeCotisation += (getBal('DJANGUI_NON_PERCU') || getBal('DJANGUI_PERCU') || getBal('DJANGUI_NONPERCU'));
 
-      // Capacité d'avalise (clampée à 0)
+      // CapacitÃ© d'avalise (clampÃ©e Ã  0)
       const epargne = getBal('EPARGNE');
       const djanguiNonPercu = getBal('DJANGUI_NON_PERCU') || getBal('DJANGUI_NONPERCU');
       const credit = getBal('CREDIT');
@@ -289,7 +501,8 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       transactionCount, 
       pendingLoans,
       totalAvaliseCapacity,
-      activeCotisations
+      activeCotisations,
+      maturingLoans
     });
   } catch (error: any) {
     console.error('getDashboardStats error:', error);
@@ -304,6 +517,21 @@ export const createCotisationGroup = async (req: Request, res: Response) => {
     res.status(201).json(group);
   } catch (error: any) {
     console.error('createCotisationGroup error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const updateCotisationGroup = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const data = req.body;
+    const group = await prisma.cotisationGroup.update({
+      where: { id: id as string },
+      data
+    });
+    res.json(group);
+  } catch (error: any) {
+    console.error('updateCotisationGroup error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
@@ -351,7 +579,7 @@ export const removeParticipantFromCotisation = async (req: Request, res: Respons
 export const payCotisationFromCaution = async (req: Request, res: Response) => {
   try {
     const { groupId, userId } = req.body;
-    res.json({ message: "Payé via Caution" });
+    res.json({ message: "PayÃ© via Caution" });
   } catch (error: any) {
     console.error('payCotisationFromCaution error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -361,7 +589,7 @@ export const payCotisationFromCaution = async (req: Request, res: Response) => {
 export const payCotisationInCash = async (req: Request, res: Response) => {
   try {
     const { groupId, userId } = req.body;
-    res.json({ message: "Payé en espèces" });
+    res.json({ message: "PayÃ© en espÃ¨ces" });
   } catch (error: any) {
     console.error('payCotisationInCash error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -370,8 +598,87 @@ export const payCotisationInCash = async (req: Request, res: Response) => {
 
 export const getLoans = async (req: Request, res: Response) => {
   try {
-    const loans = await prisma.loan.findMany({ include: { user: true }, orderBy: { createdAt: 'desc' } });
-    res.json(loans);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const status = req.query.status as string;
+    const search = req.query.search as string;
+
+    const where: any = {};
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (search) {
+      where.user = {
+        OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } }
+        ]
+      };
+    }
+
+    const total = await prisma.loan.count({ where });
+
+    const loans = await prisma.loan.findMany({ 
+      where,
+      include: { user: true }, 
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit
+    });
+    
+    const loanUserIds = [...new Set(loans.map(l => l.userId))];
+    const txs = await prisma.transaction.findMany({
+      where: {
+        userId: { in: loanUserIds },
+        purpose: { contains: "CREDIT" }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, firstName: true, lastName: true }
+    });
+    const userMap = new Map();
+    allUsers.forEach(u => userMap.set(u.id, `${u.firstName || ''} ${u.lastName || ''}`.trim()));
+    
+    const mapped = loans.map((l: any) => {
+      let avalList = l.avalistes || [];
+      
+      if (!avalList || avalList.length === 0) {
+        const tx = txs.find((t: any) => t.userId === l.userId && t.amount === l.amount);
+        if (tx && tx.operation) {
+           const op = tx.operation as any;
+           avalList = op.avalistes || op.avaliste || [];
+           if ((!avalList || avalList.length === 0) && op.beneficiary) {
+             avalList = Array.isArray(op.beneficiary) ? op.beneficiary : [op.beneficiary];
+           }
+        }
+      }
+
+      if (Array.isArray(avalList)) {
+        avalList = avalList.map((aval: any) => {
+          if (!aval.name && aval.userId) {
+             aval.name = userMap.get(aval.userId) || "Inconnu";
+          }
+          return aval;
+        });
+      }
+      
+      return {
+        ...l,
+        avaliste: avalList,
+        avalistes: avalList
+      };
+    });
+    res.json({
+      data: mapped,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
   } catch (error: any) {
     console.error('getLoans error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -383,10 +690,10 @@ export const updateLoanStatus = async (req: any, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
     
-    const adminUser = req.user ? await prisma.user.findUnique({ where: { id: req.user.userId } }) : null;
+    const adminId = req.user?.userId || req.user?.sub || req.user?.id;
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
     if (!adminUser) return res.status(401).json({ error: "Non authentifié" });
 
-    // Vérifier les droits COMEX/ADMIN
     const isAuthorized = adminUser.roles.includes('COMEX') || adminUser.roles.includes('ADMIN');
     if (!isAuthorized) {
       return res.status(403).json({ error: "Seul un membre du COMEX peut valider un crédit." });
@@ -395,9 +702,8 @@ export const updateLoanStatus = async (req: any, res: Response) => {
     const loan = await prisma.loan.findUnique({ where: { id: id as string } });
     if (!loan) return res.status(404).json({ error: "Prêt non trouvé" });
 
-    // Règle de séparation des tâches : Ne pas valider son propre prêt
     const adminName = `${adminUser.firstName} ${adminUser.lastName}`;
-    if (status === 'APPROVED' && loan.createdBy === adminName) {
+    if (status === 'APPROVED' && loan.createdBy && loan.createdBy === adminName) {
       return res.status(403).json({ error: "Vous ne pouvez pas valider un crédit que vous avez vous-même saisi." });
     }
 
@@ -405,10 +711,42 @@ export const updateLoanStatus = async (req: any, res: Response) => {
       where: { id: id as string },
       data: { 
         status: status as string,
-        validatedBy: status === 'APPROVED' ? adminName : undefined
+        validatedBy: status === 'APPROVED' ? [adminName] : undefined,
+        approvedAt: status === 'APPROVED' ? new Date() : undefined,
+        dueDate: status === 'APPROVED' ? new Date(new Date().getTime() + (loan.duration || 30) * 24 * 60 * 60 * 1000) : undefined
       },
       include: { user: true }
     });
+
+    if (status === 'APPROVED' && loan.avalistes && Array.isArray(loan.avalistes)) {
+      for (const avaliste of loan.avalistes as any[]) {
+        if (!avaliste.userId || !avaliste.amount) continue;
+        const userAccounts = await prisma.user.findUnique({ where: { id: avaliste.userId }, select: { accountIds: true } });
+        if (userAccounts && userAccounts.accountIds) {
+          const creditAvaliseAcc = await prisma.account.findFirst({
+            where: { id: { in: userAccounts.accountIds }, type: 'CREDIT_AVALISE' }
+          });
+          if (creditAvaliseAcc) {
+            await prisma.account.update({
+              where: { id: creditAvaliseAcc.id },
+              data: {
+                currentBalance: { increment: Number(avaliste.amount) },
+                availableBalance: { increment: Number(avaliste.amount) }
+              }
+            });
+          } else {
+            const newAcc = await prisma.account.create({
+              data: { type: 'CREDIT_AVALISE', currency: 'XAF', currentBalance: Number(avaliste.amount), availableBalance: Number(avaliste.amount) }
+            });
+            await prisma.user.update({
+              where: { id: avaliste.userId },
+              data: { accountIds: { push: newAcc.id } }
+            });
+          }
+        }
+      }
+    }
+
     res.json(updatedLoan);
   } catch (error: any) {
     console.error('updateLoanStatus error:', error);
@@ -419,21 +757,180 @@ export const updateLoanStatus = async (req: any, res: Response) => {
 export const createLoan = async (req: any, res: Response) => {
   try {
     const { userId, amount, duration, purpose, avalistes, interestRate } = req.body;
-    
-    // Identifier le créateur
-    const adminUser = req.user ? await prisma.user.findUnique({ where: { id: req.user.userId } }) : null;
+
+    // ─── VÉRIFICATION 1 : Champs obligatoires ───────────────────────────────
+    if (!userId || !amount || !duration || !interestRate) {
+      return res.status(400).json({ error: "Les champs userId, amount, duration et interestRate sont obligatoires." });
+    }
+
+    const loanAmount = parseFloat(amount);
+    const loanDuration = parseInt(duration);
+    const loanRate = parseFloat(interestRate);
+
+    if (isNaN(loanAmount) || loanAmount <= 0) {
+      return res.status(400).json({ error: "Le montant du crédit doit être un nombre positif." });
+    }
+    if (isNaN(loanDuration) || loanDuration <= 0) {
+      return res.status(400).json({ error: "La durée du crédit doit être un entier positif (en jours)." });
+    }
+    if (isNaN(loanRate) || loanRate < 0) {
+      return res.status(400).json({ error: "Le taux d'intérêt doit être un nombre positif ou nul." });
+    }
+
+    // ─── VÉRIFICATION 2 : Existence et statut de l'emprunteur ───────────────
+    const borrower = await prisma.user.findUnique({
+      where: { id: userId as string }
+    });
+    if (!borrower) {
+      return res.status(404).json({ error: "Client introuvable. Veuillez vérifier l'identifiant." });
+    }
+    if (!borrower.activated) {
+      return res.status(400).json({ error: `Le compte de ${borrower.firstName} ${borrower.lastName} est désactivé. Impossible de créer un crédit.` });
+    }
+    if (!borrower.verified) {
+      return res.status(400).json({ error: `Le KYC de ${borrower.firstName} ${borrower.lastName} n'est pas vérifié. Le crédit ne peut être accordé qu'à un client vérifié.` });
+    }
+
+    // ─── VÉRIFICATION 2b : Capacité d'avalise de l'emprunteur ≥ 1/3 du montant ─
+    const borrowerAccounts = await prisma.account.findMany({
+      where: { id: { in: borrower.accountIds || [] } }
+    });
+    const getBorrowerBal = (type: string) => borrowerAccounts.find(a => a.type === type)?.currentBalance || 0;
+    const borrowerEpargne = getBorrowerBal('EPARGNE');
+    const borrowerDjangui = getBorrowerBal('DJANGUI_NON_PERCU') || getBorrowerBal('DJANGUI_NONPERCU');
+    const borrowerCredit = getBorrowerBal('CREDIT');
+    const borrowerPret = getBorrowerBal('PRET');
+    const borrowerCreditAvalise = getBorrowerBal('CREDIT_AVALISE');
+    const borrowerParrainage = getBorrowerBal('PARRAINAGE');
+    const borrowerAvaliseCapacity = Math.max(0,
+      (borrowerEpargne + borrowerDjangui) - (borrowerCredit + borrowerPret + borrowerCreditAvalise + borrowerParrainage)
+    );
+    const minRequiredCapacity = loanAmount / 3;
+
+    if (borrowerAvaliseCapacity < minRequiredCapacity) {
+      return res.status(400).json({
+        error: `Capacité d'avalise insuffisante pour ${borrower.firstName} ${borrower.lastName}. ` +
+          `Pour un crédit de ${loanAmount.toLocaleString('fr-FR')} XAF, une capacité d'avalise d'au moins ` +
+          `${Math.ceil(minRequiredCapacity).toLocaleString('fr-FR')} XAF (1/3 du montant) est requise. ` +
+          `Capacité actuelle : ${borrowerAvaliseCapacity.toLocaleString('fr-FR')} XAF.`
+      });
+    }
+
+    // ─── VÉRIFICATION 3 : Pas de crédit en cours (PENDING ou APPROVED) ───────
+    const existingLoan = await prisma.loan.findFirst({
+      where: {
+        userId: userId as string,
+        status: { in: ['PENDING', 'APPROVED'] }
+      }
+    });
+    if (existingLoan) {
+      const statusLabel = existingLoan.status === 'PENDING' ? 'en attente de validation' : 'déjà actif';
+      return res.status(400).json({
+        error: `${borrower.firstName} ${borrower.lastName} possède déjà un crédit ${statusLabel} (montant : ${existingLoan.amount.toLocaleString('fr-FR')} XAF). Un nouveau crédit ne peut être créé qu'après le remboursement ou le rejet du précédent.`
+      });
+    }
+
+    // ─── VÉRIFICATION 4 : Avalistes obligatoires et valides ──────────────────
+    const avalisteList = Array.isArray(avalistes) ? avalistes : [];
+    if (avalisteList.length === 0) {
+      return res.status(400).json({ error: "Au moins un avaliste est requis pour accorder un crédit." });
+    }
+
+    // Validation de chaque avaliste
+    const errors: string[] = [];
+    const validatedAvalistes: any[] = [];
+
+    for (const aval of avalisteList) {
+      if (!aval.userId || !aval.amount) {
+        errors.push("Chaque avaliste doit avoir un userId et un montant d'avalise.");
+        continue;
+      }
+
+      const avalAmount = parseFloat(aval.amount);
+      if (isNaN(avalAmount) || avalAmount <= 0) {
+        errors.push(`Le montant d'avalise pour l'avaliste ${aval.userId} doit être positif.`);
+        continue;
+      }
+
+      // Vérifier que l'avaliste existe
+      const avalUser = await prisma.user.findUnique({
+        where: { id: aval.userId as string }
+      });
+      if (!avalUser) {
+        errors.push(`Avaliste avec l'ID ${aval.userId} introuvable.`);
+        continue;
+      }
+      if (!avalUser.activated) {
+        errors.push(`Le compte de l'avaliste ${avalUser.firstName} ${avalUser.lastName} est désactivé.`);
+        continue;
+      }
+
+      // L'avaliste ne peut pas être le même que l'emprunteur
+      if (aval.userId === userId) {
+        errors.push(`${avalUser.firstName} ${avalUser.lastName} ne peut pas être à la fois emprunteur et avaliste.`);
+        continue;
+      }
+
+      // Calculer la capacité d'avalise de l'avaliste
+      const avalAccounts = await prisma.account.findMany({
+        where: { id: { in: avalUser.accountIds || [] } }
+      });
+      const getBalance = (type: string) => avalAccounts.find(a => a.type === type)?.currentBalance || 0;
+      const epargne = getBalance('EPARGNE');
+      const djanguiNonPercu = getBalance('DJANGUI_NON_PERCU') || getBalance('DJANGUI_NONPERCU');
+      const credit = getBalance('CREDIT');
+      const pret = getBalance('PRET');
+      const creditAvalise = getBalance('CREDIT_AVALISE');
+      const parrainage = getBalance('PARRAINAGE');
+      const avaliseCapacity = Math.max(0, (epargne + djanguiNonPercu) - (credit + pret + creditAvalise + parrainage));
+
+      if (avaliseCapacity < avalAmount) {
+        errors.push(
+          `Capacité d'avalise insuffisante pour ${avalUser.firstName} ${avalUser.lastName} : ` +
+          `disponible ${avaliseCapacity.toLocaleString('fr-FR')} XAF, requis ${avalAmount.toLocaleString('fr-FR')} XAF.`
+        );
+        continue;
+      }
+
+      validatedAvalistes.push({
+        ...aval,
+        name: `${avalUser.firstName} ${avalUser.lastName}`,
+        amount: avalAmount
+      });
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join(' | ') });
+    }
+
+    // ─── VÉRIFICATION 5 : Couverture totale par les avalistes ────────────────
+    const totalAvalCoverage = validatedAvalistes.reduce((sum, a) => sum + parseFloat(a.amount), 0);
+    if (totalAvalCoverage < loanAmount) {
+      return res.status(400).json({
+        error: `La couverture totale des avalistes (${totalAvalCoverage.toLocaleString('fr-FR')} XAF) est insuffisante pour couvrir le montant du crédit (${loanAmount.toLocaleString('fr-FR')} XAF).`
+      });
+    }
+
+    // ─── Création du crédit après toutes les vérifications ───────────────────
+    const adminId = req.user?.userId || req.user?.sub || req.user?.id;
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
     const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin Système';
 
     const loan = await prisma.loan.create({
       data: {
-        userId, amount: parseFloat(amount), duration: parseInt(duration),
-        interestRate: parseFloat(interestRate), totalInterest: (parseFloat(amount) * (parseFloat(interestRate) / 100)),
-        purpose, status: 'PENDING', 
-        avalistes: Array.isArray(avalistes) ? avalistes : [],
+        userId,
+        amount: loanAmount,
+        duration: loanDuration,
+        interestRate: loanRate,
+        totalInterest: loanAmount * (loanRate / 100),
+        purpose,
+        status: 'PENDING',
+        avalistes: validatedAvalistes,
         createdBy: adminName
       },
       include: { user: true }
     });
+
     res.status(201).json(loan);
   } catch (error: any) {
     console.error('createLoan error:', error);
@@ -457,11 +954,29 @@ export const getTransactions = async (req: Request, res: Response) => {
         }),
         prisma.transaction.count()
       ]);
-      return res.json({ data: transactions, total, page, totalPages: Math.ceil(total / limit) });
+      const mapped = transactions.map((t: any) => {
+        const operation = t.operation || {};
+        const avalList = operation.avalistes || operation.avaliste || t.avalistes || t.avaliste || [];
+        return {
+          ...t,
+          avaliste: avalList,
+          avalistes: avalList
+        };
+      });
+      return res.json({ data: mapped, total, page, totalPages: Math.ceil(total / limit) });
     }
 
     const transactions = await prisma.transaction.findMany({ orderBy: { createdAt: 'desc' }, include: { user: true } });
-    res.json(transactions);
+    const mapped = transactions.map((t: any) => {
+      const operation = t.operation || {};
+      const avalList = operation.avalistes || operation.avaliste || t.avalistes || t.avaliste || [];
+      return {
+        ...t,
+        avaliste: avalList,
+        avalistes: avalList
+      };
+    });
+    res.json(mapped);
   } catch (error: any) {
     console.error('getTransactions error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -560,10 +1075,38 @@ export const updateGroup = async (req: Request, res: Response) => {
 export const assignUserGroups = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { groupIds, roles } = req.body;
+    const { groupIds } = req.body;
+    const parsedRoles = parseRoles(req.body);
+
+    let finalRoles = parsedRoles;
+    if (!finalRoles) {
+      const existingUser = await prisma.user.findUnique({ where: { id: id as string } });
+      finalRoles = existingUser?.roles || [];
+    }
+
+    if (groupIds && Array.isArray(groupIds)) {
+      const groups = await prisma.userGroup.findMany({
+        where: { id: { in: groupIds } }
+      });
+      const hasComexGroup = groups.some(g => g.name.toUpperCase() === 'COMEX' || g.name.toUpperCase() === 'COMMEX');
+      if (hasComexGroup) {
+        if (!finalRoles.includes('COMEX')) finalRoles = [...finalRoles, 'COMEX'];
+        if (!finalRoles.includes('ADMIN')) finalRoles = [...finalRoles, 'ADMIN'];
+      } else {
+        finalRoles = finalRoles.filter(r => r !== 'COMEX');
+      }
+    }
+
+    const updateData: any = {};
+    if (groupIds && Array.isArray(groupIds)) {
+      updateData.userGroups = { set: groupIds.map((gid: string) => ({ id: gid })) };
+    }
+    updateData.roles = finalRoles;
+
     const user = await prisma.user.update({
       where: { id: id as string },
-      data: { roles, userGroups: { set: groupIds.map((id: string) => ({ id })) } }
+      data: updateData,
+      include: { userGroups: true }
     });
     res.json(user);
   } catch (e: any) {
@@ -606,10 +1149,10 @@ export const createLoanConfig = async (req: Request, res: Response) => {
   try {
     const { code, rate, duration } = req.body;
     
-    // Vérifier si le code existe déjà
+    // VÃ©rifier si le code existe dÃ©jÃ 
     const existing = await prisma.loanConfig.findUnique({ where: { code } });
     if (existing) {
-      return res.status(400).json({ error: `Le code crédit "${code}" existe déjà.` });
+      return res.status(400).json({ error: `Le code crÃ©dit "${code}" existe dÃ©jÃ .` });
     }
 
     const config = await prisma.loanConfig.create({
@@ -641,7 +1184,7 @@ export const deleteLoanConfig = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     await prisma.loanConfig.delete({ where: { id: id as string } });
-    res.json({ message: 'Configuration supprimée' });
+    res.json({ message: 'Configuration supprimÃ©e' });
   } catch (error: any) {
     console.error('deleteLoanConfig error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -666,3 +1209,304 @@ export const updateUserKYC = async (req: Request, res: Response) => {
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : e.message });
   }
 };
+
+export const adminTransfer = async (req: any, res: Response) => {
+  try {
+    const { 
+      sourceUserId, 
+      sourceAccountType, 
+      destUserId, 
+      destAccountType, 
+      amount, 
+      purpose 
+    } = req.body;
+
+    const adminId = req.user?.userId || req.user?.sub || req.user?.id;
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
+    const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin Système';
+
+    if (!sourceUserId || !sourceAccountType || !destUserId || !destAccountType || !amount) {
+      return res.status(400).json({ error: "Tous les champs (expéditeur, compte source, destinataire, compte cible, montant) sont requis." });
+    }
+
+    const transferAmount = Number(amount);
+    if (isNaN(transferAmount) || transferAmount <= 0) {
+      return res.status(400).json({ error: "Le montant du transfert doit être un nombre positif." });
+    }
+
+    // 1. Rechercher l'expéditeur et le destinataire
+    const sourceUser = await prisma.user.findUnique({ where: { id: sourceUserId } });
+    if (!sourceUser) return res.status(404).json({ error: "Client expéditeur introuvable." });
+
+    const destUser = await prisma.user.findUnique({ where: { id: destUserId } });
+    if (!destUser) return res.status(404).json({ error: "Client destinataire introuvable." });
+
+    // 2. Récupérer les comptes associés
+    const sourceAccounts = await prisma.account.findMany({
+      where: { id: { in: sourceUser.accountIds || [] } }
+    });
+    const destAccounts = await prisma.account.findMany({
+      where: { id: { in: destUser.accountIds || [] } }
+    });
+
+    const sourceAccount = sourceAccounts.find(a => a.type === sourceAccountType);
+    const destAccount = destAccounts.find(a => a.type === destAccountType);
+
+    if (!sourceAccount) {
+      return res.status(400).json({ error: `Compte source de type ${sourceAccountType} introuvable.` });
+    }
+    if (!destAccount) {
+      return res.status(400).json({ error: `Compte destinataire de type ${destAccountType} introuvable.` });
+    }
+
+    // 3. Calculer les frais de transfert
+    const sourceCurrencyCode = sourceAccount.currency || 'XAF';
+    const feeDetails = await calculateTransferFee(transferAmount, sourceCurrencyCode);
+    const fee = feeDetails.fee;
+
+    // Vérifier le solde disponible (montant + frais)
+    const totalRequired = transferAmount + fee;
+    if (sourceAccount.availableBalance < totalRequired) {
+      return res.status(400).json({ 
+        error: `Solde insuffisant pour couvrir le transfert et les frais. Requis : ${totalRequired} ${sourceCurrencyCode}, Disponible : ${sourceAccount.availableBalance} ${sourceCurrencyCode}` 
+      });
+    }
+
+    // 4. Calculer le taux de change
+    const destCurrencyCode = destAccount.currency || 'XAF';
+    
+    let conversionRate = 1.0;
+    let convertedAmount = transferAmount;
+
+    if (sourceCurrencyCode !== destCurrencyCode) {
+      const sourceCurrency = await prisma.currency.findUnique({ where: { code: sourceCurrencyCode } });
+      const destCurrency = await prisma.currency.findUnique({ where: { code: destCurrencyCode } });
+
+      const sourceRateToBase = sourceCurrency ? sourceCurrency.rateToBase : (sourceCurrencyCode === 'XAF' ? 1.0 : null);
+      const destRateToBase = destCurrency ? destCurrency.rateToBase : (destCurrencyCode === 'XAF' ? 1.0 : null);
+
+      if (sourceRateToBase === null || destRateToBase === null) {
+        return res.status(400).json({ error: "Impossible de calculer le taux de change pour l'une des devises." });
+      }
+
+      // Convertir via la devise de base (XAF)
+      conversionRate = sourceRateToBase / destRateToBase;
+      convertedAmount = transferAmount * conversionRate;
+    }
+
+    // 5. Générer la référence commune pour lier les deux transactions
+    const transferRef = `TR_REF_${Date.now()}_${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const dateStr = new Date().toLocaleDateString('fr-FR').replace(/\//g, '-');
+
+    // 6. Créer les deux transactions liées à l'état PENDING
+    const result = await prisma.$transaction(async (tx) => {
+      // Créer la transaction de sortie chez l'expéditeur
+      const senderTx = await tx.transaction.create({
+        data: {
+          userId: sourceUser.id,
+          amount: -totalRequired,
+          currency: sourceCurrencyCode,
+          status: 'PENDING',
+          purpose: purpose || `Transfert vers ${destUser.firstName} ${destUser.lastName}`,
+          transactionRef: `${transferRef}_OUT`,
+          sourceAccountType,
+          targetAccountType: destAccountType,
+          createdBy: adminName,
+          operation: {
+            type: "transfer_out",
+            code: `${transferRef}_OUT`,
+            reference: `${dateStr}.TR-OUT.${sourceUser.id}`,
+            amount: -transferAmount,
+            fee: fee,
+            feeRate: feeDetails.rate,
+            flatFee: feeDetails.flatFee,
+            totalAmount: -totalRequired,
+            date: new Date().toISOString(),
+            recipient: {
+              id: destUser.id,
+              firstName: destUser.firstName,
+              lastName: destUser.lastName,
+              accountNumber: destUser.accountNumber
+            },
+            exchangeRate: conversionRate,
+            convertedAmount: -convertedAmount,
+            destCurrency: destCurrencyCode,
+            transferRef: transferRef
+          }
+        }
+      });
+
+      // Créer la transaction d'entrée chez le destinataire
+      const recipientTx = await tx.transaction.create({
+        data: {
+          userId: destUser.id,
+          amount: convertedAmount,
+          currency: destCurrencyCode,
+          status: 'PENDING',
+          purpose: purpose || `Transfert reçu de ${sourceUser.firstName} ${sourceUser.lastName}`,
+          transactionRef: `${transferRef}_IN`,
+          sourceAccountType,
+          targetAccountType: destAccountType,
+          createdBy: adminName,
+          operation: {
+            type: "transfer_in",
+            code: `${transferRef}_IN`,
+            reference: `${dateStr}.TR-IN.${destUser.id}`,
+            amount: convertedAmount,
+            date: new Date().toISOString(),
+            sender: {
+              id: sourceUser.id,
+              firstName: sourceUser.firstName,
+              lastName: sourceUser.lastName,
+              accountNumber: sourceUser.accountNumber
+            },
+            exchangeRate: conversionRate,
+            sourceAmount: transferAmount,
+            sourceCurrency: sourceCurrencyCode,
+            transferRef: transferRef
+          }
+        }
+      });
+
+      return { senderTx, recipientTx };
+    });
+
+    return res.status(200).json({
+      message: "Opération soumise au COMEX avec succès.",
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error('adminTransfer error:', error);
+    return res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+// Helper de calcul des frais de transfert
+export const calculateTransferFee = async (amount: number, currency: string): Promise<{ fee: number; rate: number; flatFee: number }> => {
+  try {
+    let config = await prisma.transferFeeConfig.findFirst({
+      where: {
+        currency: currency,
+        isActive: true,
+        minAmount: { lte: amount },
+        maxAmount: { gte: amount }
+      }
+    });
+
+    if (!config && currency !== 'XAF') {
+      const srcCurrency = await prisma.currency.findUnique({ where: { code: currency } });
+      const srcRateToBase = srcCurrency ? srcCurrency.rateToBase : null;
+
+      if (srcRateToBase !== null && srcRateToBase > 0) {
+        const amountInBase = amount * srcRateToBase;
+        const baseConfig = await prisma.transferFeeConfig.findFirst({
+          where: {
+            currency: 'XAF',
+            isActive: true,
+            minAmount: { lte: amountInBase },
+            maxAmount: { gte: amountInBase }
+          }
+        });
+
+        if (baseConfig) {
+          const feeInBase = (amountInBase * baseConfig.rate / 100) + baseConfig.flatFee;
+          const feeInSource = feeInBase / srcRateToBase;
+          const flatFeeInSource = baseConfig.flatFee / srcRateToBase;
+
+          return {
+            fee: parseFloat(feeInSource.toFixed(4)),
+            rate: baseConfig.rate,
+            flatFee: parseFloat(flatFeeInSource.toFixed(4))
+          };
+        }
+      }
+    }
+
+    if (config) {
+      const calculatedFee = (amount * config.rate / 100) + config.flatFee;
+      return {
+        fee: parseFloat(calculatedFee.toFixed(4)),
+        rate: config.rate,
+        flatFee: config.flatFee
+      };
+    }
+
+    return { fee: 0, rate: 0, flatFee: 0 };
+  } catch (error) {
+    console.error('calculateTransferFee error:', error);
+    return { fee: 0, rate: 0, flatFee: 0 };
+  }
+};
+
+// CRUD TransferFeeConfig
+export const getTransferFees = async (req: Request, res: Response) => {
+  try {
+    const fees = await prisma.transferFeeConfig.findMany({
+      orderBy: { minAmount: 'asc' }
+    });
+    res.json(fees);
+  } catch (error: any) {
+    console.error('getTransferFees error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const createTransferFee = async (req: Request, res: Response) => {
+  try {
+    const { minAmount, maxAmount, rate, flatFee, isActive } = req.body;
+    const config = await prisma.transferFeeConfig.create({
+      data: {
+        minAmount: parseFloat(minAmount),
+        maxAmount: parseFloat(maxAmount),
+        rate: parseFloat(rate),
+        flatFee: flatFee ? parseFloat(flatFee) : 0,
+        currency: 'XAF',
+        isActive: isActive !== undefined ? Boolean(isActive) : true
+      }
+    });
+    res.status(201).json(config);
+  } catch (error: any) {
+    console.error('createTransferFee error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const updateTransferFee = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { minAmount, maxAmount, rate, flatFee, isActive } = req.body;
+    const config = await prisma.transferFeeConfig.update({
+      where: { id: id as string },
+      data: {
+        minAmount: minAmount !== undefined ? parseFloat(minAmount) : undefined,
+        maxAmount: maxAmount !== undefined ? parseFloat(maxAmount) : undefined,
+        rate: rate !== undefined ? parseFloat(rate) : undefined,
+        flatFee: flatFee !== undefined ? parseFloat(flatFee) : undefined,
+        currency: 'XAF',
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined
+      }
+    });
+    res.json(config);
+  } catch (error: any) {
+    console.error('updateTransferFee error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const deleteTransferFee = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.transferFeeConfig.delete({
+      where: { id: id as string }
+    });
+    res.json({ message: 'Configuration de frais supprimée' });
+  } catch (error: any) {
+    console.error('deleteTransferFee error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+
+
+

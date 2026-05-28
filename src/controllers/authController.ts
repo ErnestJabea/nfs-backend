@@ -40,6 +40,9 @@ export const register = async (req: Request, res: Response) => {
       referredBy = await prisma.user.findFirst({ where: { referralCode } });
     }
 
+    const accountNumber = "NFS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const uniqueKey = "KEY-" + Math.random().toString(36).substring(2, 12).toUpperCase();
+
     // Create user
     const user = await prisma.user.create({
       data: {
@@ -50,7 +53,9 @@ export const register = async (req: Request, res: Response) => {
         email,
         referralCode: userReferralCode,
         referredById: (referredBy as any)?.id || null,
-        referrerName: referredBy ? `${(referredBy as any).firstName} ${(referredBy as any).lastName}` : null
+        referrerName: referredBy ? `${(referredBy as any).firstName} ${(referredBy as any).lastName}` : null,
+        accountNumber,
+        uniqueKey
       },
     });
 
@@ -118,15 +123,20 @@ export const login = async (req: Request, res: Response) => {
 
     console.log(`[DEBUG] Login successful for ${user.email || user.phone}`);
 
-    // Autoriser ADMIN, COMEX et STAFF pour le backoffice
     const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('COMEX') || user.roles.includes('STAFF');
     const token = jwt.sign({ userId: user.id, role: isAdmin ? 'ADMIN' : 'USER' }, JWT_SECRET, { expiresIn: '7d' });
 
-    // Format double : standard et mobile (data.access_token)
-    res.json({
-      token,
+    if (process.env.NODE_ENV === 'production') {
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+    }
+
+    const responsePayload: any = {
       data: {
-        access_token: token,
         id: user.id,
         user: {
           id: user.id,
@@ -145,7 +155,14 @@ export const login = async (req: Request, res: Response) => {
         role: isAdmin ? 'ADMIN' : 'USER',
         isActivated: user.activated,
       },
-    });
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      responsePayload.token = token;
+      responsePayload.data.access_token = token;
+    }
+
+    res.json(responsePayload);
   } catch (error: any) {
     console.error('Login error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -168,18 +185,91 @@ export const adminLogin = async (req: Request, res: Response) => {
 
     const token = jwt.sign({ sub: user.id, role: 'ADMIN' }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.json({ token, user: { id: user.id, email: user.email, role: 'ADMIN' } });
+    if (process.env.NODE_ENV === 'production') {
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+      res.json({ user: { id: user.id, email: user.email, role: 'ADMIN' } });
+    } else {
+      res.json({ token, user: { id: user.id, email: user.email, role: 'ADMIN' } });
+    }
   } catch (error: any) {
     console.error('Admin login error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
-export const getProfile = async (req: any, res: Response) => {
+const formatUserResponse = async (user: any) => {
+  let mobileAccounts: any[] = [];
+  try {
+    const accounts = await prisma.account.findMany({
+      where: { id: { in: user.accountIds || [] } }
+    });
+    const computedAccounts = computeAvalise(accounts);
+    
+    // Ordre strict pour le mobile (10 comptes pour couvrir tous les index jusqu'à 9)
+    mobileAccounts = [
+      computedAccounts.find(a => a.type === 'AVALISE') || { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 0
+      computedAccounts.find(a => a.type === 'PRINCIPAL') || { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 1
+      computedAccounts.find(a => a.type === 'EPARGNE') || { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 2
+      computedAccounts.find(a => a.type === 'CREDIT') || { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 3
+      computedAccounts.find(a => a.type === 'INTERET') || { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 4
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 5
+      computedAccounts.find(a => a.type === 'PRET') || { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 6
+      { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 7
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }, // 8 (Doublon pour compatibilité si nécessaire)
+      { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' } // 9
+    ];
+  } catch (accError) {
+    console.log("Warning: Failed to fetch accounts for user", user.id, accError);
+    mobileAccounts = [
+      { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' },
+      { type: 'AUTRE_3', currentBalance: 0, availableBalance: 0, currency: user.currency || 'XAF' }
+    ];
+  }
 
+  // On crée une version légère et structurée pour le mobile
+  const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user;
+
+  return {
+    ...lightUser,
+    firstName: user.firstName || "",
+    lastName: user.lastName || "",
+    email: user.email || "",
+    currency: user.currency || "XAF",
+    fluxIn: user.fluxIn || 0,
+    fluxOut: user.fluxOut || 0,
+    address: {
+      streetName: user.address || "",
+      city: user.city || "",
+      province: user.province || "",
+      postalCode: user.postalCode || "",
+    },
+    identity: {
+      typeOfIdentification: user.documentType || "CNI",
+      identificationNumber: user.documentNumber || "",
+    },
+    cotisationList: user.cotisationList || [],
+    tontineList: user.tontineList || [],
+    accountList: mobileAccounts,
+    accounts: mobileAccounts
+  };
+};
+
+export const getProfile = async (req: any, res: Response) => {
   console.log("GET PROFILE REQUEST for userId:", req.user?.sub, "type:", typeof req.user?.sub);
   try {
-
     const targetId = req.user?.sub || req.user?.userId;
     console.log("Looking for user with ID:", targetId);
     
@@ -191,85 +281,47 @@ export const getProfile = async (req: any, res: Response) => {
       where: { id: targetId }
     });
 
-
     if (user) {
       console.log("User found:", user.id);
-      let mobileAccounts: any[] = [];
-      try {
-        const accounts = await prisma.account.findMany({
-          where: { id: { in: (user as any).accountIds || [] } }
-        });
-        const computedAccounts = computeAvalise(accounts);
-        
-        // Ordre strict pour le mobile (10 comptes pour couvrir tous les index jusqu'à 9)
-        mobileAccounts = [
-          computedAccounts.find(a => a.type === 'AVALISE') || { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 0
-          computedAccounts.find(a => a.type === 'PRINCIPAL') || { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 1
-          computedAccounts.find(a => a.type === 'EPARGNE') || { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 2
-          computedAccounts.find(a => a.type === 'CREDIT') || { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 3
-          computedAccounts.find(a => a.type === 'INTERET') || { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 4
-          computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 5
-          computedAccounts.find(a => a.type === 'PRET') || { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 6
-          { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 7
-          computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }, // 8 (Doublon pour compatibilité si nécessaire)
-          { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' } // 9
-        ];
-
-
-      } catch (accError) {
-        console.log("Warning: Failed to fetch accounts for user", user.id, accError);
-        mobileAccounts = [
-          { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' },
-          { type: 'AUTRE_3', currentBalance: 0, availableBalance: 0, currency: (user as any).currency || 'XAF' }
-        ];
-
-
-      }
-
-      // On crée une version légère et structurée pour le mobile
-      const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user as any;
-
-      const structuredUser = {
-        ...lightUser,
-        firstName: user.firstName || "",
-        lastName: user.lastName || "",
-        email: user.email || "",
-        fluxIn: (user as any).fluxIn || 0,
-        fluxOut: (user as any).fluxOut || 0,
-        address: {
-          streetName: (user as any).address || "",
-          city: (user as any).city || "",
-          province: (user as any).province || "",
-          postalCode: (user as any).postalCode || "",
-        },
-        identity: {
-          typeOfIdentification: (user as any).documentType || "CNI",
-          identificationNumber: (user as any).documentNumber || "",
-        },
-        cotisationList: (user as any).cotisationList || [],
-        tontineList: (user as any).tontineList || [],
-        accountList: mobileAccounts,
-        accounts: mobileAccounts
-      };
-
-
+      const structuredUser = await formatUserResponse(user);
       return res.json({ 
         data: structuredUser,
         user: structuredUser
       });
     }
-    console.log("User NOT found in database for ID:", req.user.sub);
+    console.log("User NOT found in database for ID:", req.user?.sub);
     res.status(404).json({ error: "User not found" });
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getUserById = async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    console.log("GET USER BY ID REQUEST for:", id);
+
+    if (!id || id === 'undefined' || id === 'null' || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(404).json({ error: "Invalid user ID format" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
+
+    if (!user) {
+      console.log("User NOT found in database for ID:", id);
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const structuredUser = await formatUserResponse(user);
+    return res.json({
+      data: structuredUser,
+      user: structuredUser
+    });
+  } catch (error: any) {
+    console.error("FATAL ERROR in getUserById:", error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
@@ -297,17 +349,19 @@ export const getDashboardData = async (req: any, res: Response) => {
 
     const computedAccounts = computeAvalise(accounts);
 
+    const defaultCurrency = (user as any).currency || 'XAF';
+
     const mobileAccounts = [
-      computedAccounts.find(a => a.type === 'AVALISE') || { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'PRINCIPAL') || { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'EPARGNE') || { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'CREDIT') || { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'INTERET') || { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'PRET') || { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: 'XAF' },
-      { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: 'XAF' }
+      computedAccounts.find(a => a.type === 'AVALISE') || { type: 'AVALISE', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'PRINCIPAL') || { type: 'PRINCIPAL', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'EPARGNE') || { type: 'EPARGNE', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'CREDIT') || { type: 'CREDIT', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'INTERET') || { type: 'INTERET', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'PRET') || { type: 'PRET', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      { type: 'AUTRE_1', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      computedAccounts.find(a => a.type === 'DJANGUI_NON_PERCU') || { type: 'DJANGUI_NON_PERCU', currentBalance: 0, availableBalance: 0, currency: defaultCurrency },
+      { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: defaultCurrency }
     ];
 
     const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user as any;
@@ -317,6 +371,7 @@ export const getDashboardData = async (req: any, res: Response) => {
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       email: user.email || "",
+      currency: defaultCurrency,
       fluxIn: (user as any).fluxIn || 0,
       fluxOut: (user as any).fluxOut || 0,
       address: {
@@ -414,7 +469,9 @@ export const updateUserInfo = async (req: Request, res: Response) => {
       data: {
         firstName: updateData.firstName,
         lastName: updateData.lastName,
-        address: updateData.province ? `${updateData.streetName}, ${updateData.city}` : updateData.address
+        address: updateData.province ? `${updateData.streetName}, ${updateData.city}` : updateData.address,
+        profession: updateData.occupation,
+        email: updateData.email === "" ? null : updateData.email
       }
     });
 

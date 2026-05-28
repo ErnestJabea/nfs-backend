@@ -33,3 +33,45 @@ export const sendResetCode = async (email: string, code: string) => {
   }
 };
 
+export const sendEpargneRequestMail = async (userEmail: string, userFullName: string, montant: number, adminEmails: string[]) => {
+  try {
+    // Email pour le client
+    const clientMailOptions = {
+      from: `"NFS App" <${process.env.SMTP_USER}>`,
+      to: userEmail,
+      subject: "Demande d'épargne en attente de validation",
+      text: `Bonjour ${userFullName},\n\nVotre demande d'épargne de ${montant} XAF a bien été prise en compte et est actuellement en attente de validation par le COMEX.\n\nCordialement,\nL'équipe NFS`,
+      html: `<p>Bonjour <b>${userFullName}</b>,</p><p>Votre demande d'épargne de <b>${montant} XAF</b> a bien été prise en compte et est actuellement en attente de validation par le COMEX.</p><p>Cordialement,<br>L'équipe NFS</p>`,
+    };
+    await transporter.sendMail(clientMailOptions);
+
+    // Email pour les administrateurs (COMEX)
+    if (adminEmails.length > 0) {
+      const adminMailOptions = {
+        from: `"NFS App" <${process.env.SMTP_USER}>`,
+        to: adminEmails.join(','),
+        subject: "Nouvelle demande d'épargne à valider",
+        text: `Une nouvelle demande d'épargne de ${montant} XAF a été effectuée par ${userFullName} (${userEmail}).\nVeuillez vous connecter au backoffice pour la valider.`,
+        html: `<p>Une nouvelle demande d'épargne de <b>${montant} XAF</b> a été effectuée par <b>${userFullName}</b> (${userEmail}).</p><p>Veuillez vous connecter au backoffice pour la valider.</p>`,
+      };
+      await transporter.sendMail(adminMailOptions);
+    }
+  } catch (error) {
+    console.error(`[ERROR] Failed to send epargne request email:`, error);
+  }
+};
+
+export const sendEpargneValidationMail = async (userEmail: string, userFullName: string, montant: number) => {
+  try {
+    const mailOptions = {
+      from: `"NFS App" <${process.env.SMTP_USER}>`,
+      to: userEmail,
+      subject: "Validation de votre épargne",
+      text: `Bonjour ${userFullName},\n\nBonne nouvelle ! Votre demande d'épargne de ${montant} XAF a été validée avec succès par le COMEX.\nLe montant a été ajouté à votre solde.\n\nCordialement,\nL'équipe NFS`,
+      html: `<p>Bonjour <b>${userFullName}</b>,</p><p>Bonne nouvelle ! Votre demande d'épargne de <b>${montant} XAF</b> a été validée avec succès par le COMEX.</p><p>Le montant a été ajouté à votre solde.</p><p>Cordialement,<br>L'équipe NFS</p>`,
+    };
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    console.error(`[ERROR] Failed to send epargne validation email:`, error);
+  }
+};

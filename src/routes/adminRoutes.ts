@@ -16,6 +16,7 @@ import {
   getGroups,
   createGroup,
   updateGroup,
+  updateCotisationGroup,
   assignUserGroups,
   updateUserKYC,
   updateUserProfile,
@@ -29,7 +30,12 @@ import {
   getLoanConfigs,
   createLoanConfig,
   updateLoanConfig,
-  deleteLoanConfig
+  deleteLoanConfig,
+  adminTransfer,
+  getTransferFees,
+  createTransferFee,
+  updateTransferFee,
+  deleteTransferFee
 } from '../controllers/adminController';
 import { authMiddleware, adminMiddleware } from '../middlewares/authMiddleware';
 
@@ -49,6 +55,7 @@ router.get('/stats', getDashboardStats);
 // Legacy Tontine routes for backward compatibility
 router.get('/tontines', getCotisations);
 router.post('/tontines', createCotisationGroup);
+router.put('/tontines/:id', updateCotisationGroup);
 router.post('/tontines/participants', addParticipantToCotisation);
 router.post('/tontines/remove-participant', removeParticipantFromCotisation);
 router.post('/tontines/pay-caution', payCotisationFromCaution);
@@ -77,6 +84,12 @@ router.put('/users/:id/groups', assignUserGroups);
 router.patch('/users/:id/kyc', updateUserKYC);
 router.get('/currencies', getCurrencies);
 router.post('/currencies/sync', syncCurrencies);
+router.post('/transfer', adminTransfer);
+
+router.get('/transfer-fees', getTransferFees);
+router.post('/transfer-fees', createTransferFee);
+router.put('/transfer-fees/:id', updateTransferFee);
+router.delete('/transfer-fees/:id', deleteTransferFee);
 
 router.get('/loan-configs', getLoanConfigs);
 router.post('/loan-configs', createLoanConfig);

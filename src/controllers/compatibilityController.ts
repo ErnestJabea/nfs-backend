@@ -51,3 +51,69 @@ export const getProviderByCode = async (req: Request, res: Response) => {
 export const getPrincipalNfs = async (req: Request, res: Response) => {
   res.json({ data: "0" });
 };
+
+export const getCotisationUsers = async (req: Request, res: Response) => {
+  try {
+    const idCotisation = req.params.idCotisation as string;
+
+    if (!idCotisation || !/^[0-9a-fA-F]{24}$/.test(idCotisation)) {
+      return res.status(400).json({ error: "Invalid cotisation ID format" });
+    }
+
+    const group = await prisma.cotisationGroup.findUnique({
+      where: { id: idCotisation },
+      include: {
+        members: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+          }
+        }
+      }
+    }) as any;
+
+    if (!group) {
+      return res.status(404).json({ error: "Cotisation group not found" });
+    }
+
+    res.json({ data: group.members });
+  } catch (error: any) {
+    console.error('getCotisationUsers error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const assignCotisation = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.userId as string;
+    const idCotisation = req.query.idCotisation as string;
+
+    if (!userId || !/^[0-9a-fA-F]{24}$/.test(userId)) {
+      return res.status(400).json({ error: "Invalid user ID format" });
+    }
+    if (!idCotisation || !/^[0-9a-fA-F]{24}$/.test(idCotisation)) {
+      return res.status(400).json({ error: "Invalid cotisation ID format" });
+    }
+
+    // Add the user ID to the memberIds array and increment count
+    const group = await prisma.cotisationGroup.update({
+      where: { id: idCotisation },
+      data: {
+        memberIds: {
+          push: userId
+        },
+        nb_participant: {
+          increment: 1
+        }
+      }
+    });
+
+    res.json({ message: "Successfully assigned to cotisation", data: group });
+  } catch (error: any) {
+    console.error('assignCotisation error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
