@@ -29,27 +29,54 @@ export const requestEpargne = async (req: Request, res: Response) => {
     });
     const adminEmails = admins.map(a => a.email).filter(e => e) as string[];
 
-    const dateStr = new Date().toISOString().split('T')[0].split('-').reverse().join('-');
+    const epargneAcc = accounts.find((a: any) => a.type === 'EPARGNE');
+    if (!epargneAcc) {
+      return res.status(400).json({ error: "Compte épargne introuvable." });
+    }
 
-    // Créer la transaction en PENDING
+    const dateStr = new Date().toISOString().split('T')[0].split('-').reverse().join('-');
     const transactionRef = `EPARGNE_${Date.now()}_${userId}`;
-    const transaction = await prisma.transaction.create({
-      data: {
-        userId,
-        amount,
-        status: "PENDING",
-        purpose: "EPARGNE",
-        sourceAccountType: "PRINCIPAL",
-        targetAccountType: "EPARGNE",
-        transactionRef: transactionRef,
-        operation: {
-          type: "epargne",
-          code: `EPARGNE_${Date.now()}`,
-          reference: `${dateStr}.EP.${userId}`,
-          amount,
-          date: new Date().toISOString()
+
+    // Exécuter la transaction atomiquement et instantanément
+    const transaction = await prisma.$transaction(async (tx) => {
+      // Déduire du principal
+      await tx.account.update({
+        where: { id: principalAcc.id },
+        data: {
+          currentBalance: { decrement: amount },
+          availableBalance: { decrement: amount }
         }
-      }
+      });
+
+      // Ajouter à l'épargne
+      await tx.account.update({
+        where: { id: epargneAcc.id },
+        data: {
+          currentBalance: { increment: amount },
+          availableBalance: { increment: amount }
+        }
+      });
+
+      // Créer la transaction SUCCESS
+      return await tx.transaction.create({
+        data: {
+          userId,
+          amount,
+          status: "SUCCESS",
+          purpose: "EPARGNE",
+          sourceAccountType: "PRINCIPAL",
+          targetAccountType: "EPARGNE",
+          transactionRef: transactionRef,
+          createdBy: "System",
+          operation: {
+            type: "epargne",
+            code: `EPARGNE_${Date.now()}`,
+            reference: `${dateStr}.EP.${userId}`,
+            amount,
+            date: new Date().toISOString()
+          }
+        }
+      });
     });
 
     // Envoyer les emails

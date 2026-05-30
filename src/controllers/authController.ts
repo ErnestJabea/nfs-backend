@@ -332,13 +332,21 @@ export const getDashboardData = async (req: any, res: Response) => {
     const targetId = req.user?.sub || req.user?.userId;
     if (!targetId) return res.status(401).json({ error: "Invalid token" });
 
-    const [user, cotisations, globalBalance] = await Promise.all([
+    const [user, cotisations, allUsers] = await Promise.all([
       prisma.user.findUnique({ where: { id: targetId } }),
       prisma.cotisationGroup.findMany(),
-      import('../services/balanceService').then(m => m.BalanceService.getGlobalBalance())
+      prisma.user.findMany({ select: { accountIds: true } })
     ]);
 
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Calculer le solde global de l'épargne pour soldeNfs
+    const allAccountIds = allUsers.flatMap(u => u.accountIds || []);
+    const epargneSum = await prisma.account.aggregate({
+      where: { id: { in: allAccountIds }, type: 'EPARGNE' },
+      _sum: { currentBalance: true }
+    });
+    const totalSystemSavings = epargneSum._sum.currentBalance || 0;
 
     const accounts = await prisma.account.findMany({
       where: { id: { in: (user as any).accountIds || [] } }
@@ -394,7 +402,7 @@ export const getDashboardData = async (req: any, res: Response) => {
       data: {
         user: structuredUser,
         cotisations: cotisations.map(c => ({ ...c, _id: c.id })),
-        soldeNfs: globalBalance.totalSavings || 0
+        soldeNfs: totalSystemSavings
       }
     };
     
