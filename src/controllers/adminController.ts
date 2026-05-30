@@ -370,23 +370,35 @@ export const validateTransaction = async (req: any, res: Response) => {
       } else {
         const user = await prisma.user.findUnique({ where: { id: tx.userId! } });
         const accounts = await prisma.account.findMany({ where: { id: { in: user!.accountIds } } });
+        let sourceAccount = tx.sourceAccountType ? accounts.find(a => a.type === tx.sourceAccountType) : null;
         let targetAccount = accounts.find(a => a.type === tx.targetAccountType);
         
-        if (targetAccount) {
-          await prisma.account.update({
-            where: { id: targetAccount.id },
-            data: { 
-              currentBalance: { increment: tx.amount! }, 
-              availableBalance: { increment: tx.amount! } 
-            }
+        await prisma.$transaction(async (dbTx) => {
+          if (sourceAccount) {
+            await dbTx.account.update({
+              where: { id: sourceAccount.id },
+              data: { 
+                currentBalance: { decrement: tx.amount! }, 
+                availableBalance: { decrement: tx.amount! } 
+              }
+            });
+          }
+          if (targetAccount) {
+            await dbTx.account.update({
+              where: { id: targetAccount.id },
+              data: { 
+                currentBalance: { increment: tx.amount! }, 
+                availableBalance: { increment: tx.amount! } 
+              }
+            });
+          }
+          await dbTx.transaction.update({
+            where: { id: tx.id },
+            data: { status: 'SUCCESS', validatedBy: newValidators }
           });
-        }
-
-        const updatedTx = await prisma.transaction.update({
-          where: { id: tx.id },
-          data: { status: 'SUCCESS', validatedBy: newValidators }
         });
 
+        const updatedTx = await prisma.transaction.findUnique({ where: { id: tx.id } });
         return res.json({ message: "Validé (2/2) - Transaction exécutée avec succès.", transaction: updatedTx });
       }
     }
@@ -717,6 +729,31 @@ export const updateLoanStatus = async (req: any, res: Response) => {
       },
       include: { user: true }
     });
+
+    if (status === 'APPROVED' && loan.amount) {
+      // 1. Créditer le compte PRINCIPAL de l'emprunteur
+      const borrower = await prisma.user.findUnique({ where: { id: loan.userId }, select: { accountIds: true } });
+      if (borrower && borrower.accountIds) {
+        const principalAcc = await prisma.account.findFirst({
+          where: { id: { in: borrower.accountIds }, type: 'PRINCIPAL' }
+        });
+        if (principalAcc) {
+          await prisma.account.update({
+            where: { id: principalAcc.id },
+            data: {
+              currentBalance: { increment: loan.amount },
+              availableBalance: { increment: loan.amount }
+            }
+          });
+        }
+      }
+      
+      // 2. Mettre à jour la transaction PENDING associée
+      await prisma.transaction.updateMany({
+        where: { userId: loan.userId, purpose: loan.purpose, status: 'PENDING' },
+        data: { status: 'SUCCESS', validatedBy: [adminName] }
+      });
+    }
 
     if (status === 'APPROVED' && loan.avalistes && Array.isArray(loan.avalistes)) {
       for (const avaliste of loan.avalistes as any[]) {

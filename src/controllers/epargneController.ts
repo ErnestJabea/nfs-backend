@@ -16,6 +16,13 @@ export const requestEpargne = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User not found" });
 
+    // Check balance
+    const accounts = await prisma.account.findMany({ where: { id: { in: user.accountIds || [] } } });
+    const principalAcc = accounts.find((a: any) => a.type === 'PRINCIPAL');
+    if (!principalAcc || principalAcc.availableBalance < amount) {
+      return res.status(400).json({ error: `Solde principal insuffisant pour cette opération d'épargne.` });
+    }
+
     // Récupérer tous les admins pour la notification
     const admins = await prisma.user.findMany({
       where: { roles: { has: "ADMIN" } }
@@ -32,6 +39,7 @@ export const requestEpargne = async (req: Request, res: Response) => {
         amount,
         status: "PENDING",
         purpose: "EPARGNE",
+        sourceAccountType: "PRINCIPAL",
         targetAccountType: "EPARGNE",
         transactionRef: transactionRef,
         operation: {
