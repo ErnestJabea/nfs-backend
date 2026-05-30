@@ -18,10 +18,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
   origin: function (origin, callback) {
-    callback(null, true);
+    if (!origin) return callback(null, true);
+    return callback(null, origin);
   },
   credentials: true
 }));
