@@ -8,7 +8,7 @@ export const getEffectivePermissions = (req: any) => {
 
   // Bootstrap safety: existing ADMIN accounts without groups keep access until
   // the first permission groups are configured and assigned.
-  const allAccess = roles.includes('ADMIN') && permissions.length === 0;
+  const allAccess = roles.includes('ADMIN') && groups.length === 0;
 
   return { permissions, allAccess };
 };
