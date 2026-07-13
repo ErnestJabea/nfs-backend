@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import { computeAvalise } from '../utils/computeAvalise';
 import { sendResetCode } from '../services/mailService';
 import { sendErrorResponse } from '../utils/errorResponse';
+import { getJwtSecret } from '../config/security';
+import { canAccessUser } from '../utils/requestAccess';
 
 
 import fs from 'fs';
@@ -17,7 +20,13 @@ export const debugLog = (msg: string) => {
   console.log(msg);
 };
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
+const createPublicIdentifier = (prefix: string, byteLength = 6) => {
+  return `${prefix}-${crypto.randomBytes(byteLength).toString('hex').toUpperCase()}`;
+};
+
+const createResetCode = () => {
+  return crypto.randomInt(100000, 1000000).toString();
+};
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -33,7 +42,7 @@ export const register = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Generate unique referral code for the new user
-    const userReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const userReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
 
     // Check if referredBy exists
     let referredBy = null;
@@ -41,8 +50,8 @@ export const register = async (req: Request, res: Response) => {
       referredBy = await prisma.user.findFirst({ where: { referralCode } });
     }
 
-    const accountNumber = "NFS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
-    const uniqueKey = "KEY-" + Math.random().toString(36).substring(2, 12).toUpperCase();
+    const accountNumber = createPublicIdentifier('NFS');
+    const uniqueKey = createPublicIdentifier('KEY', 8);
 
     // Create user
     const user = await prisma.user.create({
@@ -125,7 +134,11 @@ export const login = async (req: Request, res: Response) => {
     console.log(`[DEBUG] Login successful for ${user.email || user.phone}`);
 
     const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('COMEX') || user.roles.includes('STAFF');
-    const token = jwt.sign({ userId: user.id, role: isAdmin ? 'ADMIN' : 'USER' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      { userId: user.id, sub: user.id, role: isAdmin ? 'ADMIN' : 'USER', roles: user.roles || [] },
+      getJwtSecret(),
+      { expiresIn: process.env.JWT_EXPIRES_IN || '2h' } as jwt.SignOptions
+    );
 
     if (process.env.NODE_ENV === 'production') {
       res.cookie('token', token, {
@@ -184,7 +197,11 @@ export const adminLogin = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Identifiants administrateur incorrects' });
     }
 
-    const token = jwt.sign({ sub: user.id, role: 'ADMIN' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      { userId: user.id, sub: user.id, role: 'ADMIN', roles: user.roles || [] },
+      getJwtSecret(),
+      { expiresIn: process.env.JWT_EXPIRES_IN || '2h' } as jwt.SignOptions
+    );
 
     if (process.env.NODE_ENV === 'production') {
       res.cookie('token', token, {
@@ -301,10 +318,17 @@ export const getProfile = async (req: any, res: Response) => {
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
+    const authUser = (req as any).user;
+    const requesterId = authUser?.userId || authUser?.sub;
+    const requesterRoles = authUser?.roles || [];
     console.log("GET USER BY ID REQUEST for:", id);
 
     if (!id || id === 'undefined' || id === 'null' || !/^[0-9a-fA-F]{24}$/.test(id)) {
       return res.status(404).json({ error: "Identifiant utilisateur invalide" });
+    }
+
+    if (requesterId !== id && !requesterRoles.includes('ADMIN')) {
+      return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
     }
 
     const user = await prisma.user.findUnique({
@@ -424,6 +448,10 @@ export const getDashboardData = async (req: any, res: Response) => {
 export const getAvaliseCapacity = async (req: any, res: Response) => {
   const { id } = req.params;
   try {
+    if (!canAccessUser(req, id)) {
+      return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: { accountIds: true }
@@ -454,8 +482,21 @@ export const getAvaliseCapacity = async (req: any, res: Response) => {
 
 export const activateAccount = async (req: Request, res: Response) => {
   try {
-    const { id, code } = req.params;
-    // Mocking account activation
+    const id = String(req.params.id || '');
+    const code = String(req.params.code || '');
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, uniqueKey: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Utilisateur introuvable" });
+    }
+
+    if (!user.uniqueKey || user.uniqueKey !== code) {
+      return res.status(400).json({ error: "Code d'activation invalide" });
+    }
+
     await prisma.user.update({
       where: { id: id as string },
 
@@ -471,7 +512,14 @@ export const activateAccount = async (req: Request, res: Response) => {
 export const updateUserInfo = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
+    const authUser = (req as any).user;
+    const requesterId = authUser?.userId || authUser?.sub;
+    const requesterRoles = authUser?.roles || [];
     const updateData = req.body;
+
+    if (requesterId !== userId && !requesterRoles.includes('ADMIN')) {
+      return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
+    }
     
     const user = await prisma.user.update({
       where: { id: userId as string },
@@ -507,7 +555,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Utilisateur introuvable' });
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = createResetCode();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
     console.log(`[DEBUG] Step 4: Creating reset record in DB...`);
@@ -536,7 +584,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
 export const resetPassword = async (req: Request, res: Response) => {
   try {
     const { email, code, password } = req.body;
-    console.log(`[DEBUG] Attempting password reset for: ${email} with code: ${code}`);
+    console.log(`[DEBUG] Attempting password reset for: ${email}`);
 
 
     const resetEntry = await (prisma as any).passwordReset.findFirst({

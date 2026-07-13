@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { canAccessUser, getRequestUserId } from '../utils/requestAccess';
 
 const prisma = new PrismaClient();
 
@@ -30,10 +31,13 @@ const mapTransaction = (t: any) => {
 
 export const getUserTransactions = async (req: any, res: Response) => {
   try {
-    const userId = req.params.userId || req.query.userId || req.user?.sub || req.user?.userId;
+    const userId = req.params.userId || req.query.userId || getRequestUserId(req);
 
 
     if (!userId) return res.status(400).json({ error: "User ID required" });
+    if (!canAccessUser(req, userId)) {
+      return res.status(403).json({ error: "Acces refuse aux transactions de cet utilisateur." });
+    }
 
     const transactions = await prisma.transaction.findMany({
       where: { userId },
@@ -66,8 +70,12 @@ export const getCreditListPending = async (req: Request, res: Response) => {
 
 export const getCumulCredit = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId || '');
     const { status } = req.query; // PENDING or SUCCESS
+
+    if (!canAccessUser(req, userId)) {
+      return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
+    }
     
     const transactions = await prisma.transaction.findMany({
       where: { 
@@ -96,10 +104,13 @@ export const generateInvoice = async (req: Request, res: Response) => {
 export const createTransaction = async (req: any, res: Response) => {
   try {
     const { operationCode, userId, amount, beneficiary } = req.body;
-    const authUserId = req.user?.sub || req.user?.userId;
+    const authUserId = getRequestUserId(req);
     const finalUserId = userId || authUserId;
 
     if (!finalUserId) return res.status(400).json({ error: "User ID required" });
+    if (!canAccessUser(req, finalUserId)) {
+      return res.status(403).json({ error: "Vous ne pouvez pas creer une transaction pour un autre utilisateur." });
+    }
 
     // Enregistrement de l'emprunt
     const transaction = await prisma.transaction.create({
@@ -240,7 +251,12 @@ export const getCreditByCode = async (req: Request, res: Response) => {
 export const avaliseTransaction = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { user, amount } = req.body;
+    const { amount } = req.body;
+    const user = getRequestUserId(req);
+
+    if (!user) {
+      return res.status(401).json({ error: "Session invalide. Veuillez vous reconnecter." });
+    }
 
     const transaction = await prisma.transaction.findUnique({ where: { id: id as string } });
     if (!transaction) return res.status(404).json({ error: "Transaction not found" });

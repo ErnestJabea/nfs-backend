@@ -1,8 +1,11 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import { updateExchangeRates } from '../services/currencyService';
 import { sendPasswordResetEmail, sendWelcomeEmail } from '../utils/mailer';
 import { computeAvalise } from '../utils/computeAvalise';
+import { normalizePermissions, permissionCatalog } from '../security/permissions';
+import { getEffectivePermissions } from '../middlewares/permissionMiddleware';
 
 const parseRoles = (body: any): string[] | undefined => {
   const r = body.roles || body.role;
@@ -29,10 +32,12 @@ const normalizeEmail = (value: any): string | null | undefined => {
 };
 
 const generateTemporaryPassword = (): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let password = '';
-  for (let i = 0; i < 6; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
-  return password;
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%';
+  return Array.from({ length: 14 }, () => alphabet[crypto.randomInt(0, alphabet.length)]).join('');
+};
+
+const generatePublicCode = (prefix: string, byteLength = 6): string => {
+  return `${prefix}-${crypto.randomBytes(byteLength).toString('hex').toUpperCase()}`;
 };
 
 const uniqueConflictMessage = (error: any): string | undefined => {
@@ -170,8 +175,8 @@ export const createUser = async (req: Request, res: Response) => {
 
     const accountIds = createdAccounts.map(a => a.id);
     createdAccountIds = accountIds;
-    const accountNumber = "NFS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
-    const uniqueKey = "KEY-" + Math.random().toString(36).substring(2, 12).toUpperCase();
+    const accountNumber = generatePublicCode('NFS');
+    const uniqueKey = generatePublicCode('KEY', 8);
 
     const newUser = await prisma.user.create({
       data: {
@@ -441,6 +446,7 @@ export const creditUserAccount = async (req: any, res: Response) => {
         status: 'PENDING',
         transactionRef: `NFS-${Date.now()}`,
         createdBy: adminName,
+        createdById: adminId || null,
         sourceAccountType: sourceAccountType || null,
         targetAccountType: accountType,
         operation: {
@@ -476,15 +482,19 @@ export const validateTransaction = async (req: any, res: Response) => {
     }
 
     // Empêcher l'auto-validation
-    if (tx.createdBy && adminName && tx.createdBy === adminName) {
-      return res.status(403).json({ error: "Vous ne pouvez pas valider une transaction que vous avez vous-même initiée." });
+    if ((tx as any).createdById && adminId && (tx as any).createdById === adminId) {
+      return res.status(403).json({ error: "Vous ne pouvez pas valider une transaction que vous avez vous-meme initiee." });
     }
 
-    if (adminName && tx.validatedBy.includes(adminName)) {
+    if (!(tx as any).createdById && tx.createdBy && adminName && tx.createdBy === adminName) {
+      return res.status(403).json({ error: "Vous ne pouvez pas valider une transaction que vous avez vous-meme initiee." });
+    }
+
+    if ((adminId && tx.validatedBy.includes(adminId)) || (adminName && tx.validatedBy.includes(adminName))) {
       return res.status(400).json({ error: "Vous avez déjà validé cette transaction." });
     }
 
-    const newValidators = [...tx.validatedBy, adminName];
+    const newValidators = Array.from(new Set([...tx.validatedBy, adminId || adminName].filter(Boolean)));
 
     // Vérifier s'il s'agit d'un transfert lié
     const isTransfer = tx.transactionRef?.startsWith('TR_REF_');
@@ -510,7 +520,7 @@ export const validateTransaction = async (req: any, res: Response) => {
         return res.status(400).json({ error: "Les composants débit/crédit du transfert sont invalides." });
       }
 
-      const mergedValidators = Array.from(new Set([...senderTx.validatedBy, ...recipientTx.validatedBy, adminName]));
+      const mergedValidators = Array.from(new Set([...senderTx.validatedBy, ...recipientTx.validatedBy, adminId || adminName].filter(Boolean)));
 
       if (mergedValidators.length < 2) {
         // Première validation sur 2
@@ -946,15 +956,19 @@ export const updateLoanStatus = async (req: any, res: Response) => {
     if (!loan) return res.status(404).json({ error: "Prêt non trouvé" });
 
     const adminName = `${adminUser.firstName} ${adminUser.lastName}`;
-    if (status === 'APPROVED' && loan.createdBy && loan.createdBy === adminName) {
-      return res.status(403).json({ error: "Vous ne pouvez pas valider un crédit que vous avez vous-même saisi." });
+    if (status === 'APPROVED' && (loan as any).createdById && adminId && (loan as any).createdById === adminId) {
+      return res.status(403).json({ error: "Vous ne pouvez pas valider un credit que vous avez vous-meme saisi." });
+    }
+
+    if (status === 'APPROVED' && !(loan as any).createdById && loan.createdBy && loan.createdBy === adminName) {
+      return res.status(403).json({ error: "Vous ne pouvez pas valider un credit que vous avez vous-meme saisi." });
     }
 
     const updatedLoan = await prisma.loan.update({
       where: { id: id as string },
       data: { 
         status: status as string,
-        validatedBy: status === 'APPROVED' ? [adminName] : undefined,
+        validatedBy: status === 'APPROVED' ? [adminId || adminName] : undefined,
         approvedAt: status === 'APPROVED' ? new Date() : undefined,
         dueDate: status === 'APPROVED' ? new Date(new Date().getTime() + (loan.duration || 30) * 24 * 60 * 60 * 1000) : undefined
       },
@@ -982,7 +996,7 @@ export const updateLoanStatus = async (req: any, res: Response) => {
       // 2. Mettre à jour la transaction PENDING associée
       await prisma.transaction.updateMany({
         where: { userId: loan.userId, purpose: loan.purpose, status: 'PENDING' },
-        data: { status: 'SUCCESS', validatedBy: [adminName] }
+        data: { status: 'SUCCESS', validatedBy: [adminId || adminName] }
       });
     }
 
@@ -1194,7 +1208,8 @@ export const createLoan = async (req: any, res: Response) => {
         purpose,
         status: 'PENDING',
         avalistes: validatedAvalistes,
-        createdBy: adminName
+        createdBy: adminName,
+        createdById: adminId || null
       },
       include: { user: true }
     });
@@ -1373,10 +1388,21 @@ export const getGroups = async (req: Request, res: Response) => {
   }
 };
 
+export const getPermissionCatalog = async (req: Request, res: Response) => {
+  res.json({ data: permissionCatalog });
+};
+
+export const getMyPermissions = async (req: any, res: Response) => {
+  const { permissions, allAccess } = getEffectivePermissions(req);
+  res.json({ data: { permissions, allAccess } });
+};
+
 export const createGroup = async (req: Request, res: Response) => {
   try {
     const { name, description, permissions } = req.body;
-    const group = await prisma.userGroup.create({ data: { name, description, permissions } });
+    const group = await prisma.userGroup.create({
+      data: { name, description, permissions: normalizePermissions(permissions) }
+    });
     res.json(group);
   } catch (e: any) {
     console.error('createGroup error:', e);
@@ -1387,7 +1413,10 @@ export const createGroup = async (req: Request, res: Response) => {
 export const updateGroup = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const data = req.body;
+    const data = { ...req.body };
+    if ('permissions' in data) {
+      data.permissions = normalizePermissions(data.permissions);
+    }
     const group = await prisma.userGroup.update({ where: { id: id as string }, data });
     res.json(group);
   } catch (e: any) {
@@ -1636,6 +1665,7 @@ export const adminTransfer = async (req: any, res: Response) => {
           sourceAccountType,
           targetAccountType: destAccountType,
           createdBy: adminName,
+          createdById: adminId || null,
           operation: {
             type: "transfer_out",
             code: `${transferRef}_OUT`,
@@ -1672,6 +1702,7 @@ export const adminTransfer = async (req: any, res: Response) => {
           sourceAccountType,
           targetAccountType: destAccountType,
           createdBy: adminName,
+          createdById: adminId || null,
           operation: {
             type: "transfer_in",
             code: `${transferRef}_IN`,

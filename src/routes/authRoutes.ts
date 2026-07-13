@@ -7,6 +7,7 @@ import { requestEpargne, validateEpargne, directEpargne } from '../controllers/e
 
 
 import { authMiddleware } from '../middlewares/authMiddleware';
+import { authRateLimiter, passwordResetRateLimiter } from '../middlewares/rateLimiters';
 
 import { debugLog } from '../controllers/authController';
 
@@ -18,19 +19,19 @@ router.get('/ping', (req, res) => {
 });
 
 router.get('/mobile-dashboard', authMiddleware, getDashboardData);
-router.post('/register', register);
-router.post('/login', login);
-router.post('/admin/login', adminLogin);
+router.post('/register', authRateLimiter, register);
+router.post('/login', authRateLimiter, login);
+router.post('/admin/login', authRateLimiter, adminLogin);
 router.get('/profile', authMiddleware, getProfile);
 
 
 // Password Reset
-router.get('/password-reset-code', requestPasswordReset);
-router.post('/reset-password', resetPassword);
+router.get('/password-reset-code', passwordResetRateLimiter, requestPasswordReset);
+router.post('/reset-password', passwordResetRateLimiter, resetPassword);
 
 // Mobile Aliases
-router.post('/sign_in', login);
-router.post('/sign_up-new', register);
+router.post('/sign_in', authRateLimiter, login);
+router.post('/sign_up-new', authRateLimiter, register);
 router.get('/activate-account/:id/:code', activateAccount);
 router.get('/users/principal-nfs', getPrincipalNfs);
 router.get('/users/:id', authMiddleware, getUserById);
@@ -39,7 +40,7 @@ router.get('/cotisations-users/:idCotisation', authMiddleware, getCotisationUser
 router.get('/cotisation-users/:idCotisation', authMiddleware, getCotisationUsers);
 router.get('/assign-cotisation/:userId', authMiddleware, assignCotisation);
 
-router.put('/update-user-infos-public/:userId', updateUserInfo);
+router.put('/update-user-infos-public/:userId', authMiddleware, updateUserInfo);
 router.put('/update-user-infos/:userId', authMiddleware, updateUserInfo);
 
 router.get('/cotisations', getCotisations);

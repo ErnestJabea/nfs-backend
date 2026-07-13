@@ -75,6 +75,7 @@ model Loan {
   status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
   avalistes       Json?     @default("[]")     // List of { userId, amount, interestShare }
   createdBy       String?
+  createdById     String?   @db.ObjectId
   validatedBy     String[]  @default([])
   createdAt       DateTime? @default(now())
   approvedAt      DateTime?
@@ -106,6 +107,7 @@ model Transaction {
   status          String?   @default("PENDING")
   transactionRef  String?   @unique @map("transactionRef")
   createdBy       String?   @map("createdBy")
+  createdById     String?   @db.ObjectId
   validatedBy     String[]  @default([]) @map("validatedBy")
   targetAccountType String?
   sourceAccountType String?

@@ -1,15 +1,22 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendEpargneRequestMail, sendEpargneValidationMail } from '../services/mailService';
+import { canAccessUser, getRequestUserId, requestIsAdmin } from '../utils/requestAccess';
 
 const prisma = new PrismaClient();
 
 export const requestEpargne = async (req: Request, res: Response) => {
   try {
-    const { userId, amount } = req.body;
+    const { amount } = req.body;
+    const requestedUserId = req.body.userId;
+    const userId = requestedUserId || getRequestUserId(req);
     
     if (!userId || !amount) {
       return res.status(400).json({ error: "userId and amount are required" });
+    }
+
+    if (!canAccessUser(req, userId)) {
+      return res.status(403).json({ error: "Vous ne pouvez pas creer une demande d'epargne pour un autre utilisateur." });
     }
 
     // Récupérer l'utilisateur pour l'email
@@ -94,9 +101,12 @@ export const requestEpargne = async (req: Request, res: Response) => {
 export const validateEpargne = async (req: Request, res: Response) => {
   try {
     const transactionId = String(req.params.transactionId);
-    const adminId = (req as any).user?.userId || (req as any).user?.sub;
+    const adminId = getRequestUserId(req);
 
     if (!adminId) return res.status(401).json({ error: "Unauthorized" });
+    if (!requestIsAdmin(req)) {
+      return res.status(403).json({ error: "Seul un administrateur peut valider une epargne." });
+    }
 
     const transaction = await prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -142,7 +152,7 @@ export const validateEpargne = async (req: Request, res: Response) => {
 export const directEpargne = async (req: Request, res: Response) => {
   try {
     const { amount } = req.body;
-    const userId = (req as any).user?.userId || (req as any).user?.sub;
+    const userId = getRequestUserId(req);
 
     if (!userId || !amount) {
       return res.status(400).json({ error: "userId and amount are required" });

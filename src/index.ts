@@ -1,10 +1,10 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { startPenaltyCron } from './cron/penaltyCron';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 
 import authRoutes from './routes/authRoutes';
 import walletRoutes from './routes/walletRoutes';
@@ -12,25 +12,28 @@ import adminRoutes from './routes/adminRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
 import { sendErrorResponse } from './utils/errorResponse';
-
-dotenv.config();
+import { isAllowedCorsOrigin } from './config/security';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
+app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors({
+const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    return callback(null, origin);
+    if (isAllowedCorsOrigin(origin)) return callback(null, origin || true);
+    return callback(null, false);
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+app.use(cors(corsOptions));
 app.use(cookieParser());
-app.use(morgan('dev'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '10mb' }));
+app.use(express.urlencoded({ limit: process.env.URLENCODED_BODY_LIMIT || '10mb', extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);

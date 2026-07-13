@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { canAccessUser } from '../utils/requestAccess';
 
 const prisma = new PrismaClient();
 
@@ -96,6 +97,10 @@ export const assignCotisation = async (req: Request, res: Response) => {
     }
     if (!idCotisation || !/^[0-9a-fA-F]{24}$/.test(idCotisation)) {
       return res.status(400).json({ error: "Invalid cotisation ID format" });
+    }
+
+    if (!canAccessUser(req, userId)) {
+      return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
     }
 
     // Add the user ID to the memberIds array and increment count
