@@ -5,10 +5,15 @@ export const getEffectivePermissions = (req: any) => {
   const groups = Array.isArray(req.user?.userGroups) ? req.user.userGroups : [];
   const permissions = extractGroupPermissions(groups);
   const roles = Array.isArray(req.user?.roles) ? req.user.roles : [];
+  const isComex = roles.includes('COMEX') || groups.some((group: any) => {
+    const groupName = typeof group?.name === 'string' ? group.name.trim().toUpperCase() : '';
+    return groupName === 'COMEX' || groupName === 'COMMEX';
+  });
 
   // Bootstrap safety: existing ADMIN accounts without groups keep access until
-  // the first permission groups are configured and assigned.
-  const allAccess = roles.includes('ADMIN') && groups.length === 0;
+  // the first permission groups are configured and assigned. COMEX is the
+  // governance group and keeps full access by design.
+  const allAccess = isComex || (roles.includes('ADMIN') && groups.length === 0);
 
   return { permissions, allAccess };
 };
