@@ -11,6 +11,7 @@ import walletRoutes from './routes/walletRoutes';
 import adminRoutes from './routes/adminRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
+import { sendErrorResponse } from './utils/errorResponse';
 
 dotenv.config();
 
@@ -55,7 +56,7 @@ setupSwagger(app);
 // Error Handling Middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  return sendErrorResponse(res, err);
 });
 
 startPenaltyCron();

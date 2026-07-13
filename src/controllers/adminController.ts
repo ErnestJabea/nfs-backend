@@ -1,14 +1,74 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { updateExchangeRates } from '../services/currencyService';
-import { sendWelcomeEmail } from '../utils/mailer';
+import { sendPasswordResetEmail, sendWelcomeEmail } from '../utils/mailer';
 import { computeAvalise } from '../utils/computeAvalise';
 
 const parseRoles = (body: any): string[] | undefined => {
   const r = body.roles || body.role;
   if (!r) return undefined;
-  if (Array.isArray(r)) return r;
-  if (typeof r === 'string') return [r];
+  const roles = Array.isArray(r) ? r : [r];
+  const normalizedRoles = roles
+    .filter((role: any) => typeof role === 'string' && role.trim() !== '')
+    .map((role: string) => role.trim().toUpperCase());
+  return normalizedRoles.length > 0 ? normalizedRoles : undefined;
+};
+
+const hasOwn = (body: any, key: string) => Object.prototype.hasOwnProperty.call(body, key);
+
+const normalizeText = (value: any): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+const normalizeEmail = (value: any): string | null | undefined => {
+  if (value === undefined) return undefined;
+  const trimmed = normalizeText(value);
+  return trimmed ? trimmed.toLowerCase() : null;
+};
+
+const generateTemporaryPassword = (): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let password = '';
+  for (let i = 0; i < 6; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
+  return password;
+};
+
+const uniqueConflictMessage = (error: any): string | undefined => {
+  if (error?.code !== 'P2002') return undefined;
+  const target = Array.isArray(error?.meta?.target) ? error.meta.target.join(',') : String(error?.meta?.target || '');
+  if (target.includes('email')) return 'Cet email est deja utilise.';
+  if (target.includes('phone')) return 'Ce numero de telephone est deja utilise.';
+  if (target.includes('accountNumber')) return 'Ce numero de compte existe deja. Veuillez reessayer.';
+  if (target.includes('uniqueKey')) return 'Cette cle unique existe deja. Veuillez reessayer.';
+  return 'Une valeur unique existe deja.';
+};
+
+const findUserUniquenessConflict = async (
+  fields: { email?: string | null; phone?: string },
+  currentUserId?: string
+): Promise<string | undefined> => {
+  if (fields.email) {
+    const existingByEmail = await prisma.user.findUnique({
+      where: { email: fields.email },
+      select: { id: true }
+    });
+    if (existingByEmail && existingByEmail.id !== currentUserId) {
+      return 'Cet email est deja utilise.';
+    }
+  }
+
+  if (fields.phone) {
+    const existingByPhone = await prisma.user.findUnique({
+      where: { phone: fields.phone },
+      select: { id: true }
+    });
+    if (existingByPhone && existingByPhone.id !== currentUserId) {
+      return 'Ce numero de telephone est deja utilise.';
+    }
+  }
+
   return undefined;
 };
 
@@ -72,17 +132,32 @@ export const getUsers = async (req: Request, res: Response) => {
 };
 
 export const createUser = async (req: Request, res: Response) => {
+  let createdAccountIds: string[] = [];
+
   try {
-    const { firstName, lastName, phone, email, role, country, referrerName, address, addressImageUrl } = req.body;
+    const { firstName, lastName, phone, email, country, referrerName, address, addressImageUrl } = req.body;
+    const normalizedPhone = normalizeText(phone);
+    const normalizedEmail = normalizeEmail(email) || null;
+    const roles = parseRoles(req.body) || ["CLIENT"];
+
+    if (!normalizedPhone) {
+      return res.status(400).json({ error: 'Le numero de telephone est obligatoire.' });
+    }
+
+    if (roles.includes('ADMIN') && !normalizedEmail) {
+      return res.status(400).json({ error: 'L email est obligatoire pour creer un administrateur.' });
+    }
+
+    const uniquenessConflict = await findUserUniquenessConflict({
+      email: normalizedEmail,
+      phone: normalizedPhone
+    });
+
+    if (uniquenessConflict) {
+      return res.status(409).json({ error: uniquenessConflict });
+    }
     
-    const generatePassword = () => {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      let password = '';
-      for (let i = 0; i < 6; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
-      return password;
-    };
-    
-    const plainPassword = generatePassword();
+    const plainPassword = generateTemporaryPassword();
     const bcrypt = require('bcryptjs');
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
@@ -94,13 +169,13 @@ export const createUser = async (req: Request, res: Response) => {
     ));
 
     const accountIds = createdAccounts.map(a => a.id);
+    createdAccountIds = accountIds;
     const accountNumber = "NFS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
     const uniqueKey = "KEY-" + Math.random().toString(36).substring(2, 12).toUpperCase();
-    const roles = parseRoles(req.body) || ["CLIENT"];
 
     const newUser = await prisma.user.create({
       data: {
-        firstName, lastName, phone, email: email && email.trim() !== '' ? email.trim() : null,
+        firstName, lastName, phone: normalizedPhone, ...(normalizedEmail ? { email: normalizedEmail } : {}),
         password: hashedPassword, roles: roles, activated: true, verified: false,
         country: country || "Cameroun", referrerName, address, addressImageUrl, accountIds,
         accountNumber, uniqueKey
@@ -114,28 +189,122 @@ export const createUser = async (req: Request, res: Response) => {
     res.status(201).json(newUser);
   } catch (error: any) {
     console.error('createUser error:', error);
+    if (createdAccountIds.length > 0) {
+      try {
+        await prisma.account.deleteMany({ where: { id: { in: createdAccountIds } } });
+      } catch (cleanupError) {
+        console.error('createUser cleanup error:', cleanupError);
+      }
+    }
+
+    const conflictMessage = uniqueConflictMessage(error);
+    if (conflictMessage) {
+      return res.status(409).json({ error: conflictMessage });
+    }
+
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
 export const updateUserStatus = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { isActivated, kycStatus } = req.body;
+    const id = String(req.params.id);
+    const body = req.body || {};
+    const data: any = {};
+
+    if (hasOwn(body, 'isActivated')) data.activated = Boolean(body.isActivated);
+    if (hasOwn(body, 'activated')) data.activated = Boolean(body.activated);
+    if (hasOwn(body, 'isActive')) data.activated = Boolean(body.isActive);
+
+    if (hasOwn(body, 'kycStatus')) {
+      const kycStatus = String(body.kycStatus || '').toUpperCase();
+      data.kycStatus = kycStatus;
+      data.verified = ['VERIFIED', 'APPROVED'].includes(kycStatus);
+    }
+
+    if (hasOwn(body, 'verified')) data.verified = Boolean(body.verified);
+
+    const editableFields = [
+      'firstName', 'lastName', 'country', 'referrerName', 'address', 'addressImageUrl',
+      'profession', 'matricule', 'service', 'documentType', 'documentNumber',
+      'documentUrl', 'ribUrl', 'swiftCode'
+    ];
+
+    editableFields.forEach(field => {
+      if (hasOwn(body, field)) data[field] = body[field];
+    });
+
+    if (hasOwn(body, 'email')) {
+      data.email = normalizeEmail(body.email);
+    }
+
+    if (hasOwn(body, 'phone')) {
+      const normalizedPhone = normalizeText(body.phone);
+      if (!normalizedPhone) return res.status(400).json({ error: 'Le numero de telephone est obligatoire.' });
+      data.phone = normalizedPhone;
+    }
+
+    const parsedRoles = parseRoles(body);
+    if (parsedRoles) data.roles = parsedRoles;
+
+    if (hasOwn(body, 'joiningYear')) {
+      data.joiningYear = body.joiningYear ? parseInt(body.joiningYear, 10) : null;
+    }
+
+    if (hasOwn(body, 'averageIncome')) {
+      data.averageIncome = body.averageIncome ? parseFloat(body.averageIncome) : null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'Aucune donnee a mettre a jour.' });
+    }
+
+    const uniquenessConflict = await findUserUniquenessConflict({
+      email: typeof data.email === 'string' ? data.email : undefined,
+      phone: data.phone
+    }, id);
+
+    if (uniquenessConflict) {
+      return res.status(409).json({ error: uniquenessConflict });
+    }
+
     const user = await prisma.user.update({
       where: { id: id as string },
-      data: { activated: isActivated, verified: kycStatus === 'VERIFIED' }
+      data
     });
     res.json(user);
   } catch (error: any) {
     console.error('updateUserStatus error:', error);
+    const conflictMessage = uniqueConflictMessage(error);
+    if (conflictMessage) return res.status(409).json({ error: conflictMessage });
+    if (error?.code === 'P2025') return res.status(404).json({ error: 'Utilisateur introuvable.' });
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const data = { ...req.body };
+
+    delete data.id;
+    delete data._id;
+    delete data.password;
+    delete data.createdAt;
+    delete data.updatedAt;
+    delete data.accountIds;
+    delete data.accounts;
+    delete data.userGroups;
+
+    if (hasOwn(data, 'email')) {
+      data.email = normalizeEmail(data.email);
+    }
+
+    if (hasOwn(data, 'phone')) {
+      const normalizedPhone = normalizeText(data.phone);
+      if (!normalizedPhone) return res.status(400).json({ error: 'Le numero de telephone est obligatoire.' });
+      data.phone = normalizedPhone;
+    }
+
     const parsedRoles = parseRoles(data);
     if (parsedRoles) {
       data.roles = parsedRoles;
@@ -144,11 +313,21 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       delete data.role;
       delete data.roles;
     }
+
+    const uniquenessConflict = await findUserUniquenessConflict({
+      email: typeof data.email === 'string' ? data.email : undefined,
+      phone: data.phone
+    }, id);
+
+    if (uniquenessConflict) {
+      return res.status(409).json({ error: uniquenessConflict });
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: id as string },
       data: {
         ...data,
-        joiningYear: data.joiningYear ? parseInt(data.joiningYear) : undefined,
+        joiningYear: data.joiningYear ? parseInt(data.joiningYear, 10) : undefined,
         averageIncome: data.averageIncome ? parseFloat(data.averageIncome) : undefined
       },
       include: { userGroups: true }
@@ -156,6 +335,58 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     res.json(updatedUser);
   } catch (error: any) {
     console.error('updateUserProfile error:', error);
+    const conflictMessage = uniqueConflictMessage(error);
+    if (conflictMessage) return res.status(409).json({ error: conflictMessage });
+    if (error?.code === 'P2025') return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const resetUserPassword = async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, firstName: true, lastName: true, roles: true, password: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    if (!user.roles?.includes('ADMIN')) {
+      return res.status(400).json({ error: 'Cet utilisateur n est pas un administrateur.' });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({ error: 'Impossible de reinitialiser le mot de passe: aucun email renseigne.' });
+    }
+
+    const plainPassword = generateTemporaryPassword();
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+    await prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword }
+    });
+
+    const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Administrateur';
+    try {
+      await sendPasswordResetEmail(user.email, displayName, plainPassword);
+    } catch (emailError) {
+      await prisma.user.update({
+        where: { id },
+        data: { password: user.password }
+      });
+      console.error('resetUserPassword email error:', emailError);
+      return res.status(500).json({ error: 'Mot de passe non reinitialise: echec de l envoi email.' });
+    }
+
+    res.json({ message: 'Mot de passe reinitialise et envoye par email.' });
+  } catch (error: any) {
+    console.error('resetUserPassword error:', error);
+    if (error?.code === 'P2025') return res.status(404).json({ error: 'Utilisateur introuvable.' });
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
@@ -975,44 +1206,100 @@ export const createLoan = async (req: any, res: Response) => {
   }
 };
 
+const transactionUserSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  phone: true,
+  email: true
+};
+
+const slimOperation = (operation: any) => {
+  if (!operation || typeof operation !== 'object') return operation;
+
+  const avalistes = operation.avalistes || operation.avaliste;
+  const slimAvalistes = Array.isArray(avalistes)
+    ? avalistes.map((avaliste: any) => ({
+        userId: avaliste?.userId,
+        firstName: avaliste?.firstName,
+        lastName: avaliste?.lastName,
+        phone: avaliste?.phone,
+        amount: avaliste?.amount,
+        interestShare: avaliste?.interestShare,
+      }))
+    : avalistes;
+
+  return {
+    code: operation.code,
+    name: operation.name,
+    description: operation.description,
+    avalistes: slimAvalistes,
+    avaliste: slimAvalistes,
+  };
+};
+
+const mapTransactionForList = (t: any) => {
+  const operation = slimOperation(t.operation);
+  const avalList = operation?.avalistes || operation?.avaliste || t.avalistes || t.avaliste || [];
+
+  return {
+    id: t.id,
+    userId: t.userId,
+    user: t.user,
+    purpose: t.purpose,
+    description: operation?.description || t.purpose,
+    amount: t.amount,
+    status: t.status,
+    transactionRef: t.transactionRef,
+    reference: t.transactionRef,
+    createdBy: t.createdBy,
+    validatedBy: t.validatedBy || [],
+    targetAccountType: t.targetAccountType,
+    sourceAccountType: t.sourceAccountType,
+    currency: t.currency,
+    operation,
+    avaliste: avalList,
+    avalistes: avalList,
+    createdAt: t.createdAt,
+    approvedAt: t.approvedAt,
+    dueDate: t.dueDate,
+    penaltyAmount: t.penaltyAmount,
+  };
+};
+
 export const getTransactions = async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 0;
+    const scope = req.query.scope as string | undefined;
+    const where = scope === 'admin'
+      ? { AND: [{ createdBy: { not: null } }, { createdBy: { not: 'System' } }] }
+      : scope === 'mobile'
+        ? { OR: [{ createdBy: null }, { createdBy: 'System' }] }
+        : {};
 
     if (limit > 0) {
       const skip = (page - 1) * limit;
       const [transactions, total] = await Promise.all([
         prisma.transaction.findMany({
+          where,
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: { user: true }
+          include: { user: { select: transactionUserSelect } }
         }),
-        prisma.transaction.count()
+        prisma.transaction.count({ where })
       ]);
-      const mapped = transactions.map((t: any) => {
-        const operation = t.operation || {};
-        const avalList = operation.avalistes || operation.avaliste || t.avalistes || t.avaliste || [];
-        return {
-          ...t,
-          avaliste: avalList,
-          avalistes: avalList
-        };
-      });
+      const mapped = transactions.map(mapTransactionForList);
       return res.json({ data: mapped, total, page, totalPages: Math.ceil(total / limit) });
     }
 
-    const transactions = await prisma.transaction.findMany({ orderBy: { createdAt: 'desc' }, include: { user: true } });
-    const mapped = transactions.map((t: any) => {
-      const operation = t.operation || {};
-      const avalList = operation.avalistes || operation.avaliste || t.avalistes || t.avaliste || [];
-      return {
-        ...t,
-        avaliste: avalList,
-        avalistes: avalList
-      };
+    const transactions = await prisma.transaction.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: transactionUserSelect } }
     });
+    const mapped = transactions.map(mapTransactionForList);
     res.json(mapped);
   } catch (error: any) {
     console.error('getTransactions error:', error);

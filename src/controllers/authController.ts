@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma';
 import { computeAvalise } from '../utils/computeAvalise';
 import { sendResetCode } from '../services/mailService';
+import { sendErrorResponse } from '../utils/errorResponse';
 
 
 import fs from 'fs';
@@ -25,7 +26,7 @@ export const register = async (req: Request, res: Response) => {
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({ where: { phone } });
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this phone number already exists' });
+      return res.status(400).json({ error: 'Ce numero de telephone est deja utilise' });
     }
 
     // Hash password
@@ -77,7 +78,7 @@ export const register = async (req: Request, res: Response) => {
     res.status(201).json({ message: 'User registered successfully', userId: user.id });
   } catch (error: any) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de creer le compte pour le moment.");
   }
 };
 
@@ -90,7 +91,7 @@ export const login = async (req: Request, res: Response) => {
 
     if (!loginIdentifier) {
       console.log(`[DEBUG] Login failed: Missing identifier`);
-      return res.status(400).json({ error: 'Identifier (phone or email) is required' });
+      return res.status(400).json({ error: "Le telephone ou l'email est requis" });
     }
 
     // Normalisation du numéro de téléphone (on retire le + s'il existe)
@@ -165,7 +166,7 @@ export const login = async (req: Request, res: Response) => {
     res.json(responsePayload);
   } catch (error: any) {
     console.error('Login error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Connexion impossible pour le moment.");
   }
 };
 
@@ -180,7 +181,7 @@ export const adminLogin = async (req: Request, res: Response) => {
     });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ error: 'Invalid credentials or not an admin' });
+      return res.status(401).json({ error: 'Identifiants administrateur incorrects' });
     }
 
     const token = jwt.sign({ sub: user.id, role: 'ADMIN' }, JWT_SECRET, { expiresIn: '7d' });
@@ -198,7 +199,7 @@ export const adminLogin = async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error('Admin login error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Connexion administrateur impossible pour le moment.");
   }
 };
 
@@ -274,7 +275,7 @@ export const getProfile = async (req: any, res: Response) => {
     console.log("Looking for user with ID:", targetId);
     
     if (!targetId) {
-      return res.status(401).json({ error: "Invalid token: missing subject" });
+      return res.status(401).json({ error: "Session invalide. Veuillez vous reconnecter" });
     }
 
     const user = await prisma.user.findUnique({
@@ -290,10 +291,10 @@ export const getProfile = async (req: any, res: Response) => {
       });
     }
     console.log("User NOT found in database for ID:", req.user?.sub);
-    res.status(404).json({ error: "User not found" });
+    res.status(404).json({ error: "Utilisateur introuvable" });
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de charger le profil pour le moment.");
   }
 };
 
@@ -303,7 +304,7 @@ export const getUserById = async (req: Request, res: Response) => {
     console.log("GET USER BY ID REQUEST for:", id);
 
     if (!id || id === 'undefined' || id === 'null' || !/^[0-9a-fA-F]{24}$/.test(id)) {
-      return res.status(404).json({ error: "Invalid user ID format" });
+      return res.status(404).json({ error: "Identifiant utilisateur invalide" });
     }
 
     const user = await prisma.user.findUnique({
@@ -312,7 +313,7 @@ export const getUserById = async (req: Request, res: Response) => {
 
     if (!user) {
       console.log("User NOT found in database for ID:", id);
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ error: "Utilisateur introuvable" });
     }
 
     const structuredUser = await formatUserResponse(user);
@@ -322,7 +323,7 @@ export const getUserById = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("FATAL ERROR in getUserById:", error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de charger cet utilisateur pour le moment.");
   }
 };
 
@@ -330,7 +331,7 @@ export const getDashboardData = async (req: any, res: Response) => {
   debugLog("DASHBOARD DATA REQUEST RECEIVED");
   try {
     const targetId = req.user?.sub || req.user?.userId;
-    if (!targetId) return res.status(401).json({ error: "Invalid token" });
+    if (!targetId) return res.status(401).json({ error: "Session invalide. Veuillez vous reconnecter" });
 
     const [user, cotisations, allUsers] = await Promise.all([
       prisma.user.findUnique({ where: { id: targetId } }),
@@ -338,7 +339,7 @@ export const getDashboardData = async (req: any, res: Response) => {
       prisma.user.findMany({ select: { accountIds: true } })
     ]);
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
     // Calculer le solde global de l'épargne pour soldeNfs
     const allAccountIds = allUsers.flatMap(u => u.accountIds || []);
@@ -416,7 +417,7 @@ export const getDashboardData = async (req: any, res: Response) => {
 
   } catch (error: any) {
     console.error("Dashboard error:", error);
-    res.status(500).json({ error: error.message });
+    return sendErrorResponse(res, error, "Impossible de charger le tableau de bord pour le moment.");
   }
 };
 
@@ -428,7 +429,7 @@ export const getAvaliseCapacity = async (req: any, res: Response) => {
       select: { accountIds: true }
     });
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
     const accounts = await prisma.account.findMany({
       where: { id: { in: user.accountIds || [] } }
@@ -446,7 +447,7 @@ export const getAvaliseCapacity = async (req: any, res: Response) => {
     });
   } catch (error: any) {
     console.error('Get avalise capacity error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de charger la capacite avalise pour le moment.");
   }
 };
 
@@ -460,10 +461,10 @@ export const activateAccount = async (req: Request, res: Response) => {
 
       data: { activated: true }
     });
-    res.json({ message: "Account activated successfully", data: { id, status: "active" } });
+    res.json({ message: "Compte active avec succes", data: { id, status: "active" } });
   } catch (error: any) {
     console.error('Activate account error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible d'activer le compte pour le moment.");
   }
 };
 
@@ -487,7 +488,7 @@ export const updateUserInfo = async (req: Request, res: Response) => {
     res.json({ data: user });
   } catch (error: any) {
     console.error('Update user info error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de modifier les informations pour le moment.");
   }
 };
 
@@ -496,14 +497,14 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
   try {
     const { email } = req.query;
     console.log(`[DEBUG] Step 1: Received request for ${email}`);
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    if (!email) return res.status(400).json({ error: "L'email est requis" });
 
     console.log(`[DEBUG] Step 2: Looking up user in DB...`);
     const user = await prisma.user.findFirst({ where: { email: email as string } });
     console.log(`[DEBUG] Step 3: User lookup finished. Found user: ${user ? 'Yes' : 'No'}`);
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'Utilisateur introuvable' });
     }
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -523,12 +524,12 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     await sendResetCode(email as string, code);
     console.log(`[DEBUG] Step 7: Email sent.`);
 
-    res.json({ message: 'Reset code sent successfully' });
+    res.json({ message: 'Code de reinitialisation envoye avec succes' });
 
 
   } catch (error: any) {
     console.error('Password reset request error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible d'envoyer le code de reinitialisation pour le moment.");
   }
 };
 
@@ -548,7 +549,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     });
 
     if (!resetEntry) {
-      return res.status(400).json({ error: 'Invalid or expired code' });
+      return res.status(400).json({ error: 'Code invalide ou expire' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -563,10 +564,9 @@ export const resetPassword = async (req: Request, res: Response) => {
     await (prisma as any).passwordReset.deleteMany({ where: { email } });
 
 
-    res.json({ message: 'Password reset successful' });
+    res.json({ message: 'Mot de passe reinitialise avec succes' });
   } catch (error: any) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, "Impossible de reinitialiser le mot de passe pour le moment.");
   }
 };
-

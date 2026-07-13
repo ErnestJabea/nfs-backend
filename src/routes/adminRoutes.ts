@@ -20,6 +20,7 @@ import {
   assignUserGroups,
   updateUserKYC,
   updateUserProfile,
+  resetUserPassword,
   getCurrencies,
   syncCurrencies,
   addParticipantToCotisation,
@@ -49,6 +50,7 @@ router.post('/users', createUser);
 router.put('/users/:id', updateUserStatus); // Existing but let's add a more general one or reuse
 router.patch('/users/:id', updateUserStatus);
 router.put('/users/:id/profile', updateUserProfile);
+router.post('/users/:id/reset-password', resetUserPassword);
 router.post('/users/:id/credit', creditUserAccount);
 router.get('/stats', getDashboardStats);
 
