@@ -2,18 +2,22 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import { updateExchangeRates } from '../services/currencyService';
-import { sendPasswordResetEmail, sendWelcomeEmail } from '../utils/mailer';
 import { computeAvalise } from '../utils/computeAvalise';
 import { normalizePermissions, permissionCatalog } from '../security/permissions';
 import { getEffectivePermissions } from '../middlewares/permissionMiddleware';
+import { issuePasswordResetCode } from '../services/passwordResetService';
+import { sendResetCode } from '../services/mailService';
+import { sendErrorResponse } from '../utils/errorResponse';
 
 const parseRoles = (body: any): string[] | undefined => {
   const r = body.roles || body.role;
   if (!r) return undefined;
   const roles = Array.isArray(r) ? r : [r];
+  const allowedRoles = new Set(['CLIENT', 'ADMIN', 'STAFF', 'COMEX']);
   const normalizedRoles = roles
     .filter((role: any) => typeof role === 'string' && role.trim() !== '')
-    .map((role: string) => role.trim().toUpperCase());
+    .map((role: string) => role.trim().toUpperCase())
+    .filter((role: string) => allowedRoles.has(role));
   return normalizedRoles.length > 0 ? normalizedRoles : undefined;
 };
 
@@ -83,11 +87,43 @@ export const getUsers = async (req: Request, res: Response) => {
     const role = typeof roleParam === 'string' ? roleParam : undefined;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 0;
+    const summary = req.query.summary === '1' || req.query.summary === 'true';
     
     const whereClause = role ? { roles: { has: role } } : {};
 
     let users;
     let total = 0;
+
+    if (summary) {
+      const userSelect = {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true
+      };
+
+      if (limit > 0) {
+        const skip = (page - 1) * limit;
+        const [fetchedUsers, totalCount] = await Promise.all([
+          prisma.user.findMany({
+            where: whereClause,
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+            select: userSelect
+          }),
+          prisma.user.count({ where: whereClause })
+        ]);
+        return res.json({ data: fetchedUsers, total: totalCount, page, totalPages: Math.ceil(totalCount / limit) });
+      }
+
+      users = await prisma.user.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        select: userSelect
+      });
+      return res.json(users);
+    }
 
     if (limit > 0) {
       const skip = (page - 1) * limit;
@@ -137,8 +173,6 @@ export const getUsers = async (req: Request, res: Response) => {
 };
 
 export const createUser = async (req: Request, res: Response) => {
-  let createdAccountIds: string[] = [];
-
   try {
     const { firstName, lastName, phone, email, country, referrerName, address, addressImageUrl } = req.body;
     const normalizedPhone = normalizeText(phone);
@@ -164,44 +198,49 @@ export const createUser = async (req: Request, res: Response) => {
     
     const plainPassword = generateTemporaryPassword();
     const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+    const hashedPassword = await bcrypt.hash(plainPassword, 12);
 
     const defaultAccountTypes = ['PRINCIPAL', 'CAUTION', 'EPARGNE', 'CREDIT', 'PRET', 'CREDIT_AVALISE', 'PARRAINAGE', 'AVALISE', 'DJANGUI_NON_PERCU', 'DJANGUI_PERCU'];
-    const createdAccounts = await Promise.all(defaultAccountTypes.map(type => 
-      prisma.account.create({
-        data: { type, currentBalance: 0, availableBalance: 0, currency: 'XAF' }
-      })
-    ));
-
-    const accountIds = createdAccounts.map(a => a.id);
-    createdAccountIds = accountIds;
     const accountNumber = generatePublicCode('NFS');
     const uniqueKey = generatePublicCode('KEY', 8);
 
-    const newUser = await prisma.user.create({
-      data: {
-        firstName, lastName, phone: normalizedPhone, ...(normalizedEmail ? { email: normalizedEmail } : {}),
-        password: hashedPassword, roles: roles, activated: true, verified: false,
-        country: country || "Cameroun", referrerName, address, addressImageUrl, accountIds,
-        accountNumber, uniqueKey
-      }
+    const newUser = await prisma.$transaction(async (tx) => {
+      const createdAccounts = await Promise.all(defaultAccountTypes.map(type => tx.account.create({
+        data: { type, currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      })));
+      return tx.user.create({
+        data: {
+          firstName,
+          lastName,
+          phone: normalizedPhone,
+          ...(normalizedEmail ? { email: normalizedEmail } : {}),
+          password: hashedPassword,
+          roles,
+          activated: true,
+          verified: false,
+          country: country || 'Cameroun',
+          referrerName,
+          address,
+          addressImageUrl,
+          accountIds: createdAccounts.map(account => account.id),
+          accountNumber,
+          uniqueKey,
+        },
+      });
     });
 
-    if (email && email.trim() !== '') {
-      try { await sendWelcomeEmail(email, firstName || 'Client', plainPassword); } catch (e) {}
+    if (normalizedEmail) {
+      try {
+        const resetCode = await issuePasswordResetCode(normalizedEmail);
+        await sendResetCode(normalizedEmail, resetCode);
+      } catch (emailError) {
+        console.error('createUser activation email error:', emailError);
+      }
     }
 
     res.status(201).json(newUser);
   } catch (error: any) {
     console.error('createUser error:', error);
-    if (createdAccountIds.length > 0) {
-      try {
-        await prisma.account.deleteMany({ where: { id: { in: createdAccountIds } } });
-      } catch (cleanupError) {
-        console.error('createUser cleanup error:', cleanupError);
-      }
-    }
-
     const conflictMessage = uniqueConflictMessage(error);
     if (conflictMessage) {
       return res.status(409).json({ error: conflictMessage });
@@ -294,6 +333,16 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     delete data.id;
     delete data._id;
     delete data.password;
+    delete data.tokenVersion;
+    delete data.uniqueKey;
+    delete data.activated;
+    delete data.isActivated;
+    delete data.isActive;
+    delete data.verified;
+    delete data.kycStatus;
+    delete data.referralCode;
+    delete data.fluxIn;
+    delete data.fluxOut;
     delete data.createdAt;
     delete data.updatedAt;
     delete data.accountIds;
@@ -310,14 +359,8 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       data.phone = normalizedPhone;
     }
 
-    const parsedRoles = parseRoles(data);
-    if (parsedRoles) {
-      data.roles = parsedRoles;
-      delete data.role;
-    } else {
-      delete data.role;
-      delete data.roles;
-    }
+    delete data.role;
+    delete data.roles;
 
     const uniquenessConflict = await findUserUniquenessConflict({
       email: typeof data.email === 'string' ? data.email : undefined,
@@ -352,7 +395,7 @@ export const resetUserPassword = async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, firstName: true, lastName: true, roles: true, password: true }
+      select: { id: true, email: true, firstName: true, lastName: true, roles: true }
     });
 
     if (!user) {
@@ -367,28 +410,15 @@ export const resetUserPassword = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Impossible de reinitialiser le mot de passe: aucun email renseigne.' });
     }
 
-    const plainPassword = generateTemporaryPassword();
-    const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash(plainPassword, 10);
-
-    await prisma.user.update({
-      where: { id },
-      data: { password: hashedPassword }
-    });
-
-    const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Administrateur';
     try {
-      await sendPasswordResetEmail(user.email, displayName, plainPassword);
+      const code = await issuePasswordResetCode(user.email);
+      await sendResetCode(user.email, code);
     } catch (emailError) {
-      await prisma.user.update({
-        where: { id },
-        data: { password: user.password }
-      });
       console.error('resetUserPassword email error:', emailError);
       return res.status(500).json({ error: 'Mot de passe non reinitialise: echec de l envoi email.' });
     }
 
-    res.json({ message: 'Mot de passe reinitialise et envoye par email.' });
+    res.json({ message: 'Un code de reinitialisation a ete envoye par email.' });
   } catch (error: any) {
     console.error('resetUserPassword error:', error);
     if (error?.code === 'P2025') return res.status(404).json({ error: 'Utilisateur introuvable.' });
@@ -404,7 +434,15 @@ export const creditUserAccount = async (req: any, res: Response) => {
     const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
     const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin SystÃ¨me';
 
-    const upperType = accountType.toUpperCase();
+    const transactionAmount = Number(amount);
+    const maximumAmount = Number(process.env.MAX_TRANSACTION_AMOUNT_XAF || 100_000_000);
+    if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount > maximumAmount) {
+      return res.status(400).json({ error: 'Montant invalide.' });
+    }
+    const upperType = String(accountType).toUpperCase();
+    const allowedAccountTypes = ['PRINCIPAL', 'EPARGNE', 'CAUTION', 'CREDIT', 'PRET', 'PARRAINAGE', 'DJANGUI_NON_PERCU', 'DJANGUI_PERCU'];
+    if (!allowedAccountTypes.includes(upperType)) return res.status(400).json({ error: 'Type de compte invalide.' });
+    if (!/^[A-Z]{3}$/.test(String(currency))) return res.status(400).json({ error: 'Devise invalide.' });
     let opType = 'deposit';
     let opCode = `DEPOT_${accountType}_${Date.now()}`;
     let opName = `DÃ©pÃ´t ${accountType}`;
@@ -440,8 +478,8 @@ export const creditUserAccount = async (req: any, res: Response) => {
     const transaction = await prisma.transaction.create({
       data: {
         userId: id as string,
-        purpose: description || opName,
-        amount: Number(amount) || 0,
+        purpose: String(description || opName).trim().slice(0, 200),
+        amount: transactionAmount,
         currency,
         status: 'PENDING',
         transactionRef: `NFS-${Date.now()}`,
@@ -453,7 +491,7 @@ export const creditUserAccount = async (req: any, res: Response) => {
           type: opType,
           code: opCode,
           reference: `${dateStr}.${upperType.substring(0, 2)}.${id}`,
-          amount: Number(amount) || 0,
+          amount: transactionAmount,
           date: new Date().toISOString()
         }
       }
@@ -480,6 +518,8 @@ export const validateTransaction = async (req: any, res: Response) => {
     if (!isAuthorized) {
       return res.status(403).json({ error: "Seul un membre du COMEX peut valider une transaction." });
     }
+    const validatorKey = String(adminId || adminName || '');
+    if (!validatorKey) return res.status(401).json({ error: 'Session administrateur invalide.' });
 
     // Empêcher l'auto-validation
     if ((tx as any).createdById && adminId && (tx as any).createdById === adminId) {
@@ -524,14 +564,16 @@ export const validateTransaction = async (req: any, res: Response) => {
 
       if (mergedValidators.length < 2) {
         // Première validation sur 2
-        await prisma.transaction.update({
-          where: { id: senderTx.id },
-          data: { validatedBy: mergedValidators }
-        });
-        const updatedRecipientTx = await prisma.transaction.update({
-          where: { id: recipientTx.id },
-          data: { validatedBy: mergedValidators }
-        });
+        const [, updatedRecipientTx] = await prisma.$transaction([
+          prisma.transaction.update({
+            where: { id: senderTx.id },
+            data: { validatedBy: { push: validatorKey } },
+          }),
+          prisma.transaction.update({
+            where: { id: recipientTx.id },
+            data: { validatedBy: { push: validatorKey } },
+          }),
+        ]);
 
         return res.json({ 
           message: `Validé (1/2) - Transfert en attente de la seconde signature.`, 
@@ -540,6 +582,19 @@ export const validateTransaction = async (req: any, res: Response) => {
       } else {
         // Deuxième validation : Exécuter les soldes de compte de manière atomique
         const result = await prisma.$transaction(async (dbTx) => {
+          const claimedSender = await dbTx.transaction.updateMany({
+            where: { id: senderTx.id, status: 'PENDING' },
+            data: { status: 'PROCESSING', validatedBy: mergedValidators },
+          });
+          const claimedRecipient = await dbTx.transaction.updateMany({
+            where: { id: recipientTx.id, status: 'PENDING' },
+            data: { status: 'PROCESSING', validatedBy: mergedValidators },
+          });
+          if (claimedSender.count !== 1 || claimedRecipient.count !== 1) {
+            const conflict: any = new Error('Ce transfert est deja en cours de traitement.');
+            conflict.status = 409;
+            throw conflict;
+          }
           const senderUser = await dbTx.user.findUnique({ where: { id: senderTx.userId! } });
           const recipientUser = await dbTx.user.findUnique({ where: { id: recipientTx.userId! } });
 
@@ -558,18 +613,18 @@ export const validateTransaction = async (req: any, res: Response) => {
           }
 
           const sourceAmount = Math.abs(senderTx.amount || 0);
-          if (sourceAccount.availableBalance < sourceAmount) {
-            throw new Error(`Solde insuffisant sur le compte source (${sourceAccount.availableBalance} ${sourceAccount.currency}).`);
-          }
-
-          // Déduire chez l'expéditeur
-          await dbTx.account.update({
-            where: { id: sourceAccount.id },
+          const debited = await dbTx.account.updateMany({
+            where: {
+              id: sourceAccount.id,
+              currentBalance: { gte: sourceAmount },
+              availableBalance: { gte: sourceAmount },
+            },
             data: {
               currentBalance: { decrement: sourceAmount },
               availableBalance: { decrement: sourceAmount }
             }
           });
+          if (debited.count !== 1) throw new Error('Solde insuffisant sur le compte source.');
 
           // Ajouter chez le destinataire
           const convertedAmount = recipientTx.amount || 0;
@@ -605,34 +660,47 @@ export const validateTransaction = async (req: any, res: Response) => {
       if (newValidators.length < 2) {
         const updatedTx = await prisma.transaction.update({
           where: { id: tx.id },
-          data: { validatedBy: newValidators }
+          data: { validatedBy: { push: validatorKey } }
         });
         return res.json({ message: "Validé (1/2) - En attente de la seconde signature.", transaction: updatedTx });
       } else {
         const user = await prisma.user.findUnique({ where: { id: tx.userId! } });
-        const accounts = await prisma.account.findMany({ where: { id: { in: user!.accountIds } } });
+        if (!user) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+        const accounts = await prisma.account.findMany({ where: { id: { in: user.accountIds } } });
         let sourceAccount = tx.sourceAccountType ? accounts.find(a => a.type === tx.sourceAccountType) : null;
         let targetAccount = accounts.find(a => a.type === tx.targetAccountType);
+        const executionAmount = Number(tx.amount);
+        if (!Number.isSafeInteger(executionAmount) || executionAmount <= 0 || !targetAccount) {
+          return res.status(409).json({ error: 'Donnees de transaction invalides.' });
+        }
         
         await prisma.$transaction(async (dbTx) => {
+          const claimed = await dbTx.transaction.updateMany({
+            where: { id: tx.id, status: 'PENDING' },
+            data: { status: 'PROCESSING', validatedBy: newValidators },
+          });
+          if (claimed.count !== 1) throw new Error('Transaction deja en cours de traitement.');
           if (sourceAccount) {
-            await dbTx.account.update({
-              where: { id: sourceAccount.id },
+            const debited = await dbTx.account.updateMany({
+              where: {
+                id: sourceAccount.id,
+                currentBalance: { gte: executionAmount },
+                availableBalance: { gte: executionAmount },
+              },
               data: { 
-                currentBalance: { decrement: tx.amount! }, 
-                availableBalance: { decrement: tx.amount! } 
+                currentBalance: { decrement: executionAmount },
+                availableBalance: { decrement: executionAmount }
               }
             });
+            if (debited.count !== 1) throw new Error('Solde insuffisant sur le compte source.');
           }
-          if (targetAccount) {
-            await dbTx.account.update({
-              where: { id: targetAccount.id },
-              data: { 
-                currentBalance: { increment: tx.amount! }, 
-                availableBalance: { increment: tx.amount! } 
-              }
-            });
-          }
+          await dbTx.account.update({
+            where: { id: targetAccount.id },
+            data: {
+              currentBalance: { increment: executionAmount },
+              availableBalance: { increment: executionAmount }
+            }
+          });
           await dbTx.transaction.update({
             where: { id: tx.id },
             data: { status: 'SUCCESS', validatedBy: newValidators }
@@ -645,7 +713,7 @@ export const validateTransaction = async (req: any, res: Response) => {
     }
   } catch (error: any) {
     console.error('validateTransaction error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+    return sendErrorResponse(res, error, 'Validation de la transaction impossible.');
   }
 };
 
@@ -789,12 +857,84 @@ export const updateCotisationGroup = async (req: Request, res: Response) => {
   }
 };
 
+const cotisationMemberSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  phone: true
+};
+
+const cotisationDetailSelect = {
+  id: true,
+  name: true,
+  code: true,
+  amount: true,
+  maxParticipants: true,
+  nb_participant: true,
+  frequency: true,
+  currency: true,
+  status: true,
+  createdAt: true,
+  approvedAt: true,
+  dueDate: true,
+  penaltyAmount: true,
+  memberIds: true,
+  members: {
+    select: cotisationMemberSelect
+  }
+};
+
 export const getCotisations = async (req: Request, res: Response) => {
   try {
-    const groups = await prisma.cotisationGroup.findMany({ include: { members: true } });
-    res.json(groups);
+    const groups = await prisma.cotisationGroup.findMany({
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        amount: true,
+        maxParticipants: true,
+        nb_participant: true,
+        frequency: true,
+        currency: true,
+        status: true,
+        createdAt: true,
+        approvedAt: true,
+        dueDate: true,
+        penaltyAmount: true,
+        memberIds: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json(groups.map(group => ({
+      ...group,
+      membersCount: group.memberIds?.length || group.nb_participant || 0,
+      members: []
+    })));
   } catch (error: any) {
     console.error('getCotisations error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getCotisation = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const group = await prisma.cotisationGroup.findUnique({
+      where: { id: id as string },
+      select: cotisationDetailSelect
+    });
+
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe de cotisation introuvable' });
+    }
+
+    res.json({
+      ...group,
+      membersCount: group.memberIds?.length || group.members?.length || group.nb_participant || 0
+    });
+  } catch (error: any) {
+    console.error('getCotisation error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
@@ -805,9 +945,12 @@ export const addParticipantToCotisation = async (req: Request, res: Response) =>
     const updated = await prisma.cotisationGroup.update({
       where: { id: groupId },
       data: { members: { connect: { id: userId } } },
-      include: { members: true }
+      select: cotisationDetailSelect
     });
-    res.json(updated);
+    res.json({
+      ...updated,
+      membersCount: updated.memberIds?.length || updated.members?.length || updated.nb_participant || 0
+    });
   } catch (error: any) {
     console.error('addParticipantToCotisation error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -820,9 +963,12 @@ export const removeParticipantFromCotisation = async (req: Request, res: Respons
     const updated = await prisma.cotisationGroup.update({
       where: { id: groupId },
       data: { members: { disconnect: { id: userId } } },
-      include: { members: true }
+      select: cotisationDetailSelect
     });
-    res.json(updated);
+    res.json({
+      ...updated,
+      membersCount: updated.memberIds?.length || updated.members?.length || updated.nb_participant || 0
+    });
   } catch (error: any) {
     console.error('removeParticipantFromCotisation error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -849,10 +995,84 @@ export const payCotisationInCash = async (req: Request, res: Response) => {
   }
 };
 
+const asArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const slimAvaliste = (aval: any, userMap: Map<string, string>) => {
+  const userId = typeof aval?.userId === 'string' ? aval.userId : undefined;
+  const amount = Number(aval?.amount || 0);
+
+  return {
+    userId,
+    name: typeof aval?.name === 'string' && aval.name.trim()
+      ? aval.name.trim()
+      : userId
+        ? userMap.get(userId) || 'Inconnu'
+        : 'Inconnu',
+    amount: Number.isFinite(amount) ? amount : 0,
+    status: typeof aval?.status === 'string' ? aval.status : undefined
+  };
+};
+
+const resolveLoanAvalistes = async (loan: any): Promise<any[]> => {
+  let avalList = asArray(loan.avalistes);
+
+  if (avalList.length === 0) {
+    const tx = await prisma.transaction.findFirst({
+      where: {
+        userId: loan.userId,
+        amount: loan.amount,
+        purpose: { contains: "CREDIT" }
+      },
+      select: { operation: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const op = tx?.operation as any;
+    avalList = asArray(op?.avalistes || op?.avaliste);
+    if (avalList.length === 0 && op?.beneficiary) {
+      avalList = Array.isArray(op.beneficiary) ? op.beneficiary : [op.beneficiary];
+    }
+  }
+
+  const avalisteUserIds = [
+    ...new Set(
+      avalList
+        .map((aval: any) => typeof aval?.userId === 'string' ? aval.userId : undefined)
+        .filter(Boolean)
+    )
+  ] as string[];
+
+  const avalisteUsers = avalisteUserIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: avalisteUserIds } },
+        select: { id: true, firstName: true, lastName: true }
+      })
+    : [];
+
+  const userMap = new Map<string, string>();
+  avalisteUsers.forEach(user => {
+    userMap.set(user.id, `${user.firstName || ''} ${user.lastName || ''}`.trim());
+  });
+
+  return avalList.map((aval: any) => slimAvaliste(aval, userMap));
+};
+
 export const getLoans = async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const requestedLimit = parseInt(req.query.limit as string) || 10;
+    const limit = Math.min(Math.max(requestedLimit, 1), 50);
     const status = req.query.status as string;
     const search = req.query.search as string;
 
@@ -871,58 +1091,48 @@ export const getLoans = async (req: Request, res: Response) => {
       };
     }
 
-    const total = await prisma.loan.count({ where });
-
-    const loans = await prisma.loan.findMany({ 
-      where,
-      include: { user: true }, 
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit
-    });
-    
-    const loanUserIds = [...new Set(loans.map(l => l.userId))];
-    const txs = await prisma.transaction.findMany({
-      where: {
-        userId: { in: loanUserIds },
-        purpose: { contains: "CREDIT" }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const allUsers = await prisma.user.findMany({
-      select: { id: true, firstName: true, lastName: true }
-    });
-    const userMap = new Map();
-    allUsers.forEach(u => userMap.set(u.id, `${u.firstName || ''} ${u.lastName || ''}`.trim()));
-    
-    const mapped = loans.map((l: any) => {
-      let avalList = l.avalistes || [];
-      
-      if (!avalList || avalList.length === 0) {
-        const tx = txs.find((t: any) => t.userId === l.userId && t.amount === l.amount);
-        if (tx && tx.operation) {
-           const op = tx.operation as any;
-           avalList = op.avalistes || op.avaliste || [];
-           if ((!avalList || avalList.length === 0) && op.beneficiary) {
-             avalList = Array.isArray(op.beneficiary) ? op.beneficiary : [op.beneficiary];
-           }
-        }
-      }
-
-      if (Array.isArray(avalList)) {
-        avalList = avalList.map((aval: any) => {
-          if (!aval.name && aval.userId) {
-             aval.name = userMap.get(aval.userId) || "Inconnu";
+    const [total, loans] = await Promise.all([
+      prisma.loan.count({ where }),
+      prisma.loan.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          amount: true,
+          interestRate: true,
+          totalInterest: true,
+          duration: true,
+          purpose: true,
+          status: true,
+          createdBy: true,
+          createdById: true,
+          validatedBy: true,
+          createdAt: true,
+          approvedAt: true,
+          dueDate: true,
+          penaltyAmount: true,
+          updatedAt: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true
+            }
           }
-          return aval;
-        });
-      }
-      
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit
+      })
+    ]);
+
+    const mapped = loans.map((l: any) => {
       return {
         ...l,
-        avaliste: avalList,
-        avalistes: avalList
+        avaliste: [],
+        avalistes: [],
+        avalistesDeferred: true
       };
     });
     res.json({
@@ -938,10 +1148,65 @@ export const getLoans = async (req: Request, res: Response) => {
   }
 };
 
+export const getLoan = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const loan = await prisma.loan.findUnique({
+      where: { id: id as string },
+      select: {
+        id: true,
+        userId: true,
+        amount: true,
+        interestRate: true,
+        totalInterest: true,
+        duration: true,
+        purpose: true,
+        status: true,
+        avalistes: true,
+        createdBy: true,
+        createdById: true,
+        validatedBy: true,
+        createdAt: true,
+        approvedAt: true,
+        dueDate: true,
+        penaltyAmount: true,
+        updatedAt: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true
+          }
+        }
+      }
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Prêt non trouvé" });
+    }
+
+    const avalistes = await resolveLoanAvalistes(loan);
+    res.json({
+      ...loan,
+      avaliste: avalistes,
+      avalistes
+    });
+  } catch (error: any) {
+    console.error('getLoan error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
 export const updateLoanStatus = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+    const normalizedStatus = String(status || '').toUpperCase();
+    if (!['APPROVED', 'REJECTED'].includes(normalizedStatus)) {
+      return res.status(400).json({ error: 'Statut de credit invalide.' });
+    }
     
     const adminId = req.user?.userId || req.user?.sub || req.user?.id;
     const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
@@ -954,79 +1219,96 @@ export const updateLoanStatus = async (req: any, res: Response) => {
 
     const loan = await prisma.loan.findUnique({ where: { id: id as string } });
     if (!loan) return res.status(404).json({ error: "Prêt non trouvé" });
+    if (loan.status !== 'PENDING') return res.status(409).json({ error: 'Ce credit a deja ete traite.' });
 
     const adminName = `${adminUser.firstName} ${adminUser.lastName}`;
-    if (status === 'APPROVED' && (loan as any).createdById && adminId && (loan as any).createdById === adminId) {
+    if (normalizedStatus === 'APPROVED' && (loan as any).createdById && adminId && (loan as any).createdById === adminId) {
       return res.status(403).json({ error: "Vous ne pouvez pas valider un credit que vous avez vous-meme saisi." });
     }
 
-    if (status === 'APPROVED' && !(loan as any).createdById && loan.createdBy && loan.createdBy === adminName) {
+    if (normalizedStatus === 'APPROVED' && !(loan as any).createdById && loan.createdBy && loan.createdBy === adminName) {
       return res.status(403).json({ error: "Vous ne pouvez pas valider un credit que vous avez vous-meme saisi." });
     }
 
-    const updatedLoan = await prisma.loan.update({
-      where: { id: id as string },
+    const claimedLoan = await prisma.loan.updateMany({
+      where: { id: id as string, status: 'PENDING' },
       data: { 
-        status: status as string,
-        validatedBy: status === 'APPROVED' ? [adminId || adminName] : undefined,
-        approvedAt: status === 'APPROVED' ? new Date() : undefined,
-        dueDate: status === 'APPROVED' ? new Date(new Date().getTime() + (loan.duration || 30) * 24 * 60 * 60 * 1000) : undefined
-      },
-      include: { user: true }
+        status: normalizedStatus,
+        validatedBy: normalizedStatus === 'APPROVED' ? [adminId || adminName] : undefined,
+        approvedAt: normalizedStatus === 'APPROVED' ? new Date() : undefined,
+        dueDate: normalizedStatus === 'APPROVED' ? new Date(new Date().getTime() + (loan.duration || 30) * 24 * 60 * 60 * 1000) : undefined
+      }
     });
+    if (claimedLoan.count !== 1) return res.status(409).json({ error: 'Ce credit est deja en cours de traitement.' });
+    const updatedLoan = await prisma.loan.findUnique({ where: { id: id as string }, include: { user: true } });
 
-    if (status === 'APPROVED' && loan.amount) {
+    try {
+      await prisma.$transaction(async (dbTx) => {
+    if (normalizedStatus === 'APPROVED' && loan.amount) {
       // 1. Créditer le compte PRINCIPAL de l'emprunteur
-      const borrower = await prisma.user.findUnique({ where: { id: loan.userId }, select: { accountIds: true } });
-      if (borrower && borrower.accountIds) {
-        const principalAcc = await prisma.account.findFirst({
+      const borrower = await dbTx.user.findUnique({ where: { id: loan.userId }, select: { accountIds: true } });
+      if (!borrower) throw new Error('Emprunteur introuvable.');
+      if (borrower.accountIds) {
+        const principalAcc = await dbTx.account.findFirst({
           where: { id: { in: borrower.accountIds }, type: 'PRINCIPAL' }
         });
-        if (principalAcc) {
-          await prisma.account.update({
-            where: { id: principalAcc.id },
-            data: {
-              currentBalance: { increment: loan.amount },
-              availableBalance: { increment: loan.amount }
-            }
-          });
-        }
+        if (!principalAcc) throw new Error('Compte principal de l emprunteur introuvable.');
+        await dbTx.account.update({
+          where: { id: principalAcc.id },
+          data: {
+            currentBalance: { increment: loan.amount },
+            availableBalance: { increment: loan.amount }
+          }
+        });
       }
       
       // 2. Mettre à jour la transaction PENDING associée
-      await prisma.transaction.updateMany({
-        where: { userId: loan.userId, purpose: loan.purpose, status: 'PENDING' },
+      const updatedTransactions = await dbTx.transaction.updateMany({
+        where: loan.transactionId
+          ? { id: loan.transactionId, status: 'PENDING' }
+          : { userId: loan.userId, purpose: loan.purpose, status: 'PENDING' },
         data: { status: 'SUCCESS', validatedBy: [adminId || adminName] }
       });
+      if (loan.transactionId && updatedTransactions.count !== 1) throw new Error('Transaction de credit associee introuvable.');
     }
 
-    if (status === 'APPROVED' && loan.avalistes && Array.isArray(loan.avalistes)) {
+    if (normalizedStatus === 'APPROVED' && loan.avalistes && Array.isArray(loan.avalistes)) {
       for (const avaliste of loan.avalistes as any[]) {
         if (!avaliste.userId || !avaliste.amount) continue;
-        const userAccounts = await prisma.user.findUnique({ where: { id: avaliste.userId }, select: { accountIds: true } });
+        const endorsedAmount = Number(avaliste.amount);
+        if (!Number.isSafeInteger(endorsedAmount) || endorsedAmount <= 0) throw new Error('Montant avaliste invalide.');
+        const userAccounts = await dbTx.user.findUnique({ where: { id: avaliste.userId }, select: { accountIds: true } });
         if (userAccounts && userAccounts.accountIds) {
-          const creditAvaliseAcc = await prisma.account.findFirst({
+          const creditAvaliseAcc = await dbTx.account.findFirst({
             where: { id: { in: userAccounts.accountIds }, type: 'CREDIT_AVALISE' }
           });
           if (creditAvaliseAcc) {
-            await prisma.account.update({
+            await dbTx.account.update({
               where: { id: creditAvaliseAcc.id },
               data: {
-                currentBalance: { increment: Number(avaliste.amount) },
-                availableBalance: { increment: Number(avaliste.amount) }
+                currentBalance: { increment: endorsedAmount },
+                availableBalance: { increment: endorsedAmount }
               }
             });
           } else {
-            const newAcc = await prisma.account.create({
-              data: { type: 'CREDIT_AVALISE', currency: 'XAF', currentBalance: Number(avaliste.amount), availableBalance: Number(avaliste.amount) }
+            const newAcc = await dbTx.account.create({
+              data: { type: 'CREDIT_AVALISE', currency: 'XAF', currentBalance: endorsedAmount, availableBalance: endorsedAmount }
             });
-            await prisma.user.update({
+            await dbTx.user.update({
               where: { id: avaliste.userId },
               data: { accountIds: { push: newAcc.id } }
             });
           }
         }
       }
+    }
+      });
+    } catch (sideEffectError) {
+      await prisma.loan.updateMany({
+        where: { id: loan.id, status: normalizedStatus },
+        data: { status: 'PENDING', validatedBy: [], approvedAt: null, dueDate: null },
+      });
+      throw sideEffectError;
     }
 
     res.json(updatedLoan);
@@ -1547,13 +1829,42 @@ export const deleteLoanConfig = async (req: Request, res: Response) => {
 export const updateUserKYC = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const data = req.body;
+    const body = req.body || {};
+    const allowedFields = [
+      'documentType', 'documentNumber', 'documentUrl', 'address', 'addressImageUrl',
+      'ribUrl', 'swiftCode', 'beneficiaries', 'emergencyContacts', 'profession',
+      'country', 'joiningYear', 'kycStatus'
+    ];
+    const data: any = {};
+    for (const field of allowedFields) {
+      if (hasOwn(body, field)) data[field] = body[field];
+    }
+    if (hasOwn(body, 'averageIncome')) {
+      const averageIncome = Number(body.averageIncome);
+      if (!Number.isFinite(averageIncome) || averageIncome < 0) {
+        return res.status(400).json({ error: 'Revenu moyen invalide.' });
+      }
+      data.averageIncome = averageIncome;
+    }
+    if (hasOwn(data, 'joiningYear')) {
+      const joiningYear = Number(data.joiningYear);
+      if (!Number.isInteger(joiningYear) || joiningYear < 1900 || joiningYear > new Date().getFullYear() + 1) {
+        return res.status(400).json({ error: 'Annee d adhesion invalide.' });
+      }
+      data.joiningYear = joiningYear;
+    }
+    if (hasOwn(data, 'kycStatus')) {
+      data.kycStatus = String(data.kycStatus || '').toUpperCase();
+      if (!['IDLE', 'PENDING', 'APPROVED', 'REJECTED'].includes(data.kycStatus)) {
+        return res.status(400).json({ error: 'Statut KYC invalide.' });
+      }
+    }
+    if (Object.keys(data).length === 0) return res.status(400).json({ error: 'Aucune donnee KYC valide.' });
     const user = await prisma.user.update({
       where: { id: id as string },
       data: {
         ...data,
-        averageIncome: data.averageIncome ? parseFloat(data.averageIncome) : undefined,
-        verified: data.kycStatus === 'APPROVED'
+        ...(hasOwn(data, 'kycStatus') ? { verified: data.kycStatus === 'APPROVED' } : {})
       }
     });
     res.json(user);

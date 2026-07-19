@@ -33,6 +33,27 @@ export const sendResetCode = async (email: string, code: string) => {
   }
 };
 
+const escapeHtml = (value: string) => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
+export const sendTransactionOtpEmail = async (email: string, code: string, summary: string) => {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error('SMTP is not configured.');
+  }
+
+  return transporter.sendMail({
+    from: `"NFS App" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: 'Autorisation de votre transaction NFS',
+    text: `Code a usage unique : ${code}. Operation : ${summary}. Il expire dans 3 minutes. Ne le communiquez a personne.`,
+    html: `<p>Votre code a usage unique est : <strong>${code}</strong></p><p>Operation : ${escapeHtml(summary)}</p><p>Il expire dans 3 minutes. Ne le communiquez a personne.</p>`,
+  });
+};
+
 export const sendEpargneRequestMail = async (userEmail: string, userFullName: string, montant: number, adminEmails: string[]) => {
   try {
     // Email pour le client

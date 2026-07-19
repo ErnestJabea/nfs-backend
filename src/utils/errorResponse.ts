@@ -81,7 +81,7 @@ export const getApiError = (error: unknown, fallbackMessage = 'Une erreur est su
   if (typeof anyError?.status === 'number' && anyError.status >= 400 && anyError.status < 500) {
     return {
       status: anyError.status,
-      code: 'REQUEST_ERROR',
+      code: typeof anyError.code === 'string' ? anyError.code : 'REQUEST_ERROR',
       message: anyError.message || fallbackMessage,
     };
   }

@@ -9,17 +9,21 @@ import morgan from 'morgan';
 import authRoutes from './routes/authRoutes';
 import walletRoutes from './routes/walletRoutes';
 import adminRoutes from './routes/adminRoutes';
+import transactionIntentRoutes from './routes/transactionIntentRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
 import { sendErrorResponse } from './utils/errorResponse';
-import { isAllowedCorsOrigin } from './config/security';
+import { isAllowedCorsOrigin, validateSecurityConfiguration } from './config/security';
+import { sanitizeJsonResponses } from './middlewares/responseSanitizer';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+validateSecurityConfiguration();
 
 // Middlewares
 app.set('trust proxy', 1);
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.disable('x-powered-by');
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
 const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
     if (isAllowedCorsOrigin(origin)) return callback(null, origin || true);
@@ -27,18 +31,35 @@ const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-CSRF-Token', 'Idempotency-Key'],
 };
 app.use(cors(corsOptions));
 app.use(cookieParser());
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const unsafeMethod = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  if (unsafeMethod && req.cookies?.token) {
+    const origin = req.get('Origin');
+    if (!origin || !isAllowedCorsOrigin(origin)) {
+      return res.status(403).json({ error: 'Origine de requete non autorisee.', code: 'ORIGIN_NOT_ALLOWED' });
+    }
+  }
+  next();
+});
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '10mb' }));
-app.use(express.urlencoded({ limit: process.env.URLENCODED_BODY_LIMIT || '10mb', extended: true }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(express.urlencoded({ limit: process.env.URLENCODED_BODY_LIMIT || '256kb', extended: false }));
+app.use(sanitizeJsonResponses);
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/wallets', walletRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/transaction-intents', transactionIntentRoutes);
 
 // Mobile Compatibility Aliases
 app.use('/public/v1', authRoutes); // Aliasing /public/v1/sign_in to /api/auth/login

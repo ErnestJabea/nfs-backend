@@ -6,40 +6,84 @@ import prisma from '../utils/prisma';
 import { computeAvalise } from '../utils/computeAvalise';
 import { sendResetCode } from '../services/mailService';
 import { sendErrorResponse } from '../utils/errorResponse';
-import { getJwtSecret } from '../config/security';
+import { getJwtSecret, getSessionCookieOptions, getSessionTtlSeconds } from '../config/security';
 import { canAccessUser } from '../utils/requestAccess';
+import { hashPasswordResetCode, issuePasswordResetCode } from '../services/passwordResetService';
 
 
-import fs from 'fs';
-import path from 'path';
-
-const logFile = path.join(__dirname, '../../debug_logs.txt');
 export const debugLog = (msg: string) => {
-  const line = `[${new Date().toISOString()}] ${msg}\n`;
-  fs.appendFileSync(logFile, line);
-  console.log(msg);
+  if (process.env.NODE_ENV !== 'production') console.debug(msg);
 };
 
 const createPublicIdentifier = (prefix: string, byteLength = 6) => {
   return `${prefix}-${crypto.randomBytes(byteLength).toString('hex').toUpperCase()}`;
 };
 
-const createResetCode = () => {
-  return crypto.randomInt(100000, 1000000).toString();
+const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizePhone = (value: unknown) => String(value || '').trim().replace(/[\s()-]/g, '');
+const passwordIsStrong = (value: unknown) => {
+  const password = String(value || '');
+  return password.length >= 12 && password.length <= 128 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
 };
+
+const createSession = (user: any) => {
+  const csrf = crypto.randomBytes(32).toString('base64url');
+  const token = jwt.sign(
+    {
+      userId: user.id,
+      sub: user.id,
+      roles: user.roles || [],
+      tokenVersion: user.tokenVersion || 0,
+      csrf,
+    },
+    getJwtSecret(),
+    { expiresIn: getSessionTtlSeconds() },
+  );
+  return { token, csrf };
+};
+
+const publicSessionUser = (user: any) => ({
+  id: user.id,
+  phone: user.phone,
+  email: user.email,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  referralCode: user.referralCode,
+  kycStatus: user.kycStatus,
+  roles: user.roles || [],
+  role: user.roles?.includes('ADMIN') ? 'ADMIN' : 'USER',
+  isActivated: Boolean(user.activated),
+});
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { phone, password, firstName, lastName, email, referralCode } = req.body;
+    const { password, firstName, lastName, referralCode } = req.body;
+    const phone = normalizePhone(req.body.phone);
+    const email = normalizeEmail(req.body.email) || null;
+
+    if (!/^\+?[0-9]{8,15}$/.test(phone)) {
+      return res.status(400).json({ error: 'Numero de telephone invalide.', code: 'INVALID_PHONE' });
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Adresse email invalide.', code: 'INVALID_EMAIL' });
+    }
+    if (!passwordIsStrong(password)) {
+      return res.status(400).json({
+        error: 'Le mot de passe doit contenir 12 a 128 caracteres, avec majuscule, minuscule et chiffre.',
+        code: 'WEAK_PASSWORD',
+      });
+    }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({ where: { phone } });
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ phone }, ...(email ? [{ email }] : [])] },
+    });
     if (existingUser) {
       return res.status(400).json({ error: 'Ce numero de telephone est deja utilise' });
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Generate unique referral code for the new user
     const userReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -53,35 +97,29 @@ export const register = async (req: Request, res: Response) => {
     const accountNumber = createPublicIdentifier('NFS');
     const uniqueKey = createPublicIdentifier('KEY', 8);
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        phone,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        email,
-        referralCode: userReferralCode,
-        referredById: (referredBy as any)?.id || null,
-        referrerName: referredBy ? `${(referredBy as any).firstName} ${(referredBy as any).lastName}` : null,
-        accountNumber,
-        uniqueKey
-      },
-    });
-
-    // Create default accounts
     const defaultAccountTypes = ['PRINCIPAL', 'CAUTION', 'EPARGNE', 'CREDIT', 'PRET', 'CREDIT_AVALISE', 'PARRAINAGE', 'AVALISE', 'DJANGUI_NON_PERCU', 'DJANGUI_PERCU'];
-    const createdAccounts = await Promise.all(defaultAccountTypes.map(type => 
-      prisma.account.create({
-        data: { type, currentBalance: 0, availableBalance: 0, currency: 'XAF' }
-      })
-    ));
-
-    const accountIds = createdAccounts.map(a => a.id);
-    
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { accountIds }
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          phone,
+          password: hashedPassword,
+          firstName: String(firstName || '').trim().slice(0, 80),
+          lastName: String(lastName || '').trim().slice(0, 80),
+          email,
+          referralCode: userReferralCode,
+          referredById: (referredBy as any)?.id || null,
+          referrerName: referredBy ? `${(referredBy as any).firstName} ${(referredBy as any).lastName}` : null,
+          accountNumber,
+          uniqueKey,
+        },
+      });
+      const createdAccounts = await Promise.all(defaultAccountTypes.map(type => tx.account.create({
+        data: { type, currentBalance: 0, availableBalance: 0, currency: 'XAF' },
+      })));
+      return tx.user.update({
+        where: { id: createdUser.id },
+        data: { accountIds: createdAccounts.map(account => account.id) },
+      });
     });
 
     res.status(201).json({ message: 'User registered successfully', userId: user.id });
@@ -94,12 +132,9 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   try {
     const { phone, username, email, identifier, password } = req.body;
-    let loginIdentifier = identifier || phone || email || username;
+    const loginIdentifier = String(identifier || phone || email || username || '').trim();
 
-    console.log(`[DEBUG] Login attempt for identifier: ${loginIdentifier}`);
-
-    if (!loginIdentifier) {
-      console.log(`[DEBUG] Login failed: Missing identifier`);
+    if (!loginIdentifier || !password) {
       return res.status(400).json({ error: "Le telephone ou l'email est requis" });
     }
 
@@ -113,70 +148,36 @@ export const login = async (req: Request, res: Response) => {
           { phone: loginIdentifier },
           { phone: phoneWithoutPlus },
           { phone: phoneWithPlus },
-          { email: loginIdentifier }
+          { email: loginIdentifier.toLowerCase() }
         ]
       }
     });
 
     if (!user) {
-      console.log(`[DEBUG] Login failed: User not found for ${loginIdentifier}`);
+      await bcrypt.compare(String(password), '$2b$12$C6UzMDM.H6dfI/f/IKcEe.1efnHza4/XhC8wT7uD1qH6E9SkJXxCe');
       return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
     }
-
-    console.log(`[DEBUG] User found: ${user.phone} / ${user.email} (ID: ${user.id}). Checking password...`);
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      console.log(`[DEBUG] Login failed: Invalid password for ${loginIdentifier}`);
       return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
     }
 
-    console.log(`[DEBUG] Login successful for ${user.email || user.phone}`);
-
-    const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('COMEX') || user.roles.includes('STAFF');
-    const token = jwt.sign(
-      { userId: user.id, sub: user.id, role: isAdmin ? 'ADMIN' : 'USER', roles: user.roles || [] },
-      getJwtSecret(),
-      { expiresIn: process.env.JWT_EXPIRES_IN || '2h' } as jwt.SignOptions
-    );
-
-    if (process.env.NODE_ENV === 'production') {
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
+    if (!user.activated) {
+      return res.status(403).json({ error: 'Compte inactif. Contactez un administrateur.', code: 'ACCOUNT_DISABLED' });
     }
 
-    const responsePayload: any = {
+    const session = createSession(user);
+    res.cookie('token', session.token, getSessionCookieOptions());
+    const safeUser = publicSessionUser(user);
+    return res.json({
+      csrfToken: session.csrf,
       data: {
         id: user.id,
-        user: {
-          id: user.id,
-          phone: user.phone,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: isAdmin ? 'ADMIN' : 'USER',
-          isActivated: user.activated,
-        }
+        user: safeUser,
       },
-      user: {
-        id: user.id,
-        phone: user.phone,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: isAdmin ? 'ADMIN' : 'USER',
-        isActivated: user.activated,
-      },
-    };
-
-    if (process.env.NODE_ENV !== 'production') {
-      responsePayload.token = token;
-      responsePayload.data.access_token = token;
-    }
-
-    res.json(responsePayload);
+      user: safeUser,
+    });
   } catch (error: any) {
     console.error('Login error:', error);
     return sendErrorResponse(res, error, "Connexion impossible pour le moment.");
@@ -193,30 +194,39 @@ export const adminLogin = async (req: Request, res: Response) => {
       }
     });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user || !user.activated || !(await bcrypt.compare(String(password || ''), user.password))) {
       return res.status(401).json({ error: 'Identifiants administrateur incorrects' });
     }
 
-    const token = jwt.sign(
-      { userId: user.id, sub: user.id, role: 'ADMIN', roles: user.roles || [] },
-      getJwtSecret(),
-      { expiresIn: process.env.JWT_EXPIRES_IN || '2h' } as jwt.SignOptions
-    );
-
-    if (process.env.NODE_ENV === 'production') {
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000
-      });
-      res.json({ user: { id: user.id, email: user.email, role: 'ADMIN' } });
-    } else {
-      res.json({ token, user: { id: user.id, email: user.email, role: 'ADMIN' } });
-    }
+    const session = createSession(user);
+    res.cookie('token', session.token, getSessionCookieOptions());
+    res.json({ csrfToken: session.csrf, user: publicSessionUser(user) });
   } catch (error: any) {
     console.error('Admin login error:', error);
     return sendErrorResponse(res, error, "Connexion administrateur impossible pour le moment.");
+  }
+};
+
+export const getSession = async (req: any, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+    if (!user) return res.status(401).json({ error: 'Session invalide.', code: 'SESSION_INVALID' });
+    return res.json({ user: publicSessionUser(user), csrfToken: req.user.csrf });
+  } catch (error: any) {
+    return sendErrorResponse(res, error, 'Impossible de verifier la session.');
+  }
+};
+
+export const logout = async (req: any, res: Response) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    res.clearCookie('token', { ...getSessionCookieOptions(), maxAge: undefined });
+    return res.status(204).send();
+  } catch (error: any) {
+    return sendErrorResponse(res, error, 'Deconnexion impossible pour le moment.');
   }
 };
 
@@ -258,7 +268,7 @@ const formatUserResponse = async (user: any) => {
   }
 
   // On crée une version légère et structurée pour le mobile
-  const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user;
+  const { password, uniqueKey, tokenVersion, documentUrl, ribUrl, addressImageUrl, ...lightUser } = user;
 
   return {
     ...lightUser,
@@ -286,10 +296,8 @@ const formatUserResponse = async (user: any) => {
 };
 
 export const getProfile = async (req: any, res: Response) => {
-  console.log("GET PROFILE REQUEST for userId:", req.user?.sub, "type:", typeof req.user?.sub);
   try {
     const targetId = req.user?.sub || req.user?.userId;
-    console.log("Looking for user with ID:", targetId);
     
     if (!targetId) {
       return res.status(401).json({ error: "Session invalide. Veuillez vous reconnecter" });
@@ -300,14 +308,12 @@ export const getProfile = async (req: any, res: Response) => {
     });
 
     if (user) {
-      console.log("User found:", user.id);
       const structuredUser = await formatUserResponse(user);
       return res.json({ 
         data: structuredUser,
         user: structuredUser
       });
     }
-    console.log("User NOT found in database for ID:", req.user?.sub);
     res.status(404).json({ error: "Utilisateur introuvable" });
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
@@ -321,7 +327,6 @@ export const getUserById = async (req: Request, res: Response) => {
     const authUser = (req as any).user;
     const requesterId = authUser?.userId || authUser?.sub;
     const requesterRoles = authUser?.roles || [];
-    console.log("GET USER BY ID REQUEST for:", id);
 
     if (!id || id === 'undefined' || id === 'null' || !/^[0-9a-fA-F]{24}$/.test(id)) {
       return res.status(404).json({ error: "Identifiant utilisateur invalide" });
@@ -336,7 +341,6 @@ export const getUserById = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      console.log("User NOT found in database for ID:", id);
       return res.status(404).json({ error: "Utilisateur introuvable" });
     }
 
@@ -377,9 +381,6 @@ export const getDashboardData = async (req: any, res: Response) => {
       where: { id: { in: (user as any).accountIds || [] } }
     });
     
-    debugLog(`DEBUG: Found ${accounts.length} accounts for Ernest`);
-    accounts.forEach(a => debugLog(`DEBUG: Account ${a.type} = ${a.currentBalance}`));
-
     const computedAccounts = computeAvalise(accounts);
 
     const defaultCurrency = (user as any).currency || 'XAF';
@@ -397,7 +398,7 @@ export const getDashboardData = async (req: any, res: Response) => {
       { type: 'AUTRE_2', currentBalance: 0, availableBalance: 0, currency: defaultCurrency }
     ];
 
-    const { documentUrl, ribUrl, addressImageUrl, ...lightUser } = user as any;
+    const { password, uniqueKey, tokenVersion, documentUrl, ribUrl, addressImageUrl, ...lightUser } = user as any;
 
     const structuredUser = {
       ...lightUser,
@@ -431,12 +432,6 @@ export const getDashboardData = async (req: any, res: Response) => {
       }
     };
     
-    debugLog("SENDING DASHBOARD DATA: " + JSON.stringify({
-      principal: (structuredUser as any).accountList[1].currentBalance,
-      epargne: (structuredUser as any).accountList[2].currentBalance,
-      soldeNfs: responseData.data.soldeNfs
-    }));
-
     res.json(responseData);
 
   } catch (error: any) {
@@ -500,7 +495,7 @@ export const activateAccount = async (req: Request, res: Response) => {
     await prisma.user.update({
       where: { id: id as string },
 
-      data: { activated: true }
+      data: { activated: true, uniqueKey: null }
     });
     res.json({ message: "Compte active avec succes", data: { id, status: "active" } });
   } catch (error: any) {
@@ -533,7 +528,8 @@ export const updateUserInfo = async (req: Request, res: Response) => {
     });
 
 
-    res.json({ data: user });
+    const structuredUser = await formatUserResponse(user);
+    res.json({ data: structuredUser });
   } catch (error: any) {
     console.error('Update user info error:', error);
     return sendErrorResponse(res, error, "Impossible de modifier les informations pour le moment.");
@@ -543,38 +539,16 @@ export const updateUserInfo = async (req: Request, res: Response) => {
 
 export const requestPasswordReset = async (req: Request, res: Response) => {
   try {
-    const { email } = req.query;
-    console.log(`[DEBUG] Step 1: Received request for ${email}`);
+    const email = normalizeEmail(req.body?.email);
     if (!email) return res.status(400).json({ error: "L'email est requis" });
 
-    console.log(`[DEBUG] Step 2: Looking up user in DB...`);
-    const user = await prisma.user.findFirst({ where: { email: email as string } });
-    console.log(`[DEBUG] Step 3: User lookup finished. Found user: ${user ? 'Yes' : 'No'}`);
+    const user = await prisma.user.findUnique({ where: { email } });
+    const genericResponse = { message: 'Si ce compte existe, un code de reinitialisation a ete envoye.' };
+    if (!user) return res.json(genericResponse);
 
-    if (!user) {
-      return res.status(404).json({ error: 'Utilisateur introuvable' });
-    }
-
-    const code = createResetCode();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
-
-    console.log(`[DEBUG] Step 4: Creating reset record in DB...`);
-    await (prisma as any).passwordReset.create({
-      data: {
-        email: email as string,
-        code,
-        expiresAt,
-      },
-    });
-    console.log(`[DEBUG] Step 5: Reset record created.`);
-
-    console.log(`[DEBUG] Step 6: Sending email to ${email}...`);
-    await sendResetCode(email as string, code);
-    console.log(`[DEBUG] Step 7: Email sent.`);
-
-    res.json({ message: 'Code de reinitialisation envoye avec succes' });
-
-
+    const code = await issuePasswordResetCode(email);
+    await sendResetCode(email, code);
+    return res.json(genericResponse);
   } catch (error: any) {
     console.error('Password reset request error:', error);
     return sendErrorResponse(res, error, "Impossible d'envoyer le code de reinitialisation pour le moment.");
@@ -583,36 +557,41 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
 
 export const resetPassword = async (req: Request, res: Response) => {
   try {
-    const { email, code, password } = req.body;
-    console.log(`[DEBUG] Attempting password reset for: ${email}`);
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code || '').trim();
+    const password = req.body?.password;
+    if (!email || !/^\d{8}$/.test(code) || !passwordIsStrong(password)) {
+      return res.status(400).json({ error: 'Donnees de reinitialisation invalides.', code: 'INVALID_RESET_REQUEST' });
+    }
 
-
-    const resetEntry = await (prisma as any).passwordReset.findFirst({
+    const resetEntry = await prisma.passwordReset.findFirst({
       where: {
         email,
-        code,
         expiresAt: { gt: new Date() },
+        attempts: { lt: 5 },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    if (!resetEntry) {
+    const submittedHash = hashPasswordResetCode(email, code);
+    const storedHash = Buffer.from(resetEntry?.code || '');
+    const candidateHash = Buffer.from(submittedHash);
+    const matches = Boolean(resetEntry) && storedHash.length === candidateHash.length && crypto.timingSafeEqual(storedHash, candidateHash);
+    if (!resetEntry || !matches) {
+      if (resetEntry) {
+        await prisma.passwordReset.update({ where: { id: resetEntry.id }, data: { attempts: { increment: 1 } } });
+      }
       return res.status(400).json({ error: 'Code invalide ou expire' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await prisma.user.update({
-      where: { email: email as string },
-      data: { password: hashedPassword },
-    });
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.user.update({ where: { email }, data: { password: hashedPassword, tokenVersion: { increment: 1 } } }),
+      prisma.passwordReset.deleteMany({ where: { email } }),
+    ]);
 
-    console.log(`[DEBUG] Password updated successfully for ${email}`);
-
-    // Clean up
-    await (prisma as any).passwordReset.deleteMany({ where: { email } });
-
-
-    res.json({ message: 'Mot de passe reinitialise avec succes' });
+    res.clearCookie('token', { path: '/' });
+    return res.json({ message: 'Mot de passe reinitialise avec succes' });
   } catch (error: any) {
     console.error('Reset password error:', error);
     return sendErrorResponse(res, error, "Impossible de reinitialiser le mot de passe pour le moment.");

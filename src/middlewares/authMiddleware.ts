@@ -22,7 +22,7 @@ const normalizeDecodedUser = (decoded: any) => {
   };
 };
 
-export const authMiddleware = (req: any, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: any, res: Response, next: NextFunction) => {
   const token = getTokenFromRequest(req);
 
   if (!token) {
@@ -37,9 +37,39 @@ export const authMiddleware = (req: any, res: Response, next: NextFunction) => {
       return res.status(401).json({ error: 'Session invalide. Veuillez vous reconnecter.', code: 'SESSION_INVALID' });
     }
 
-    req.user = normalizedUser;
+    const user = await prisma.user.findUnique({
+      where: { id: normalizedUser.userId },
+      select: { id: true, roles: true, activated: true, tokenVersion: true, userGroups: true },
+    });
+
+    if (!user || !user.activated) {
+      res.clearCookie('token', { path: '/' });
+      return res.status(403).json({ error: 'Compte inactif ou introuvable.', code: 'ACCOUNT_DISABLED' });
+    }
+
+    if (Number(normalizedUser.tokenVersion || 0) !== user.tokenVersion) {
+      res.clearCookie('token', { path: '/' });
+      return res.status(401).json({ error: 'Session revoquee. Veuillez vous reconnecter.', code: 'SESSION_REVOKED' });
+    }
+
+    const usesCookieSession = Boolean(req.cookies?.token);
+    const unsafeMethod = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    if (usesCookieSession && unsafeMethod) {
+      const csrfHeader = req.get('X-CSRF-Token');
+      if (!normalizedUser.csrf || !csrfHeader || csrfHeader !== normalizedUser.csrf) {
+        return res.status(403).json({ error: 'Jeton CSRF manquant ou invalide.', code: 'CSRF_INVALID' });
+      }
+    }
+
+    req.user = {
+      ...normalizedUser,
+      roles: user.roles || [],
+      userGroups: user.userGroups || [],
+      tokenVersion: user.tokenVersion,
+    };
     next();
   } catch (error) {
+    res.clearCookie('token', { path: '/' });
     return res.status(401).json({ error: 'Session expiree. Veuillez vous reconnecter.', code: 'SESSION_EXPIRED' });
   }
 };

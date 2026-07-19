@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { canAccessUser } from '../utils/requestAccess';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma';
+import { canAccessUser, getRequestUserId, requestIsAdmin } from '../utils/requestAccess';
 
 export const getCotisations = async (req: Request, res: Response) => {
   try {
@@ -69,8 +67,6 @@ export const getCotisationUsers = async (req: Request, res: Response) => {
             id: true,
             firstName: true,
             lastName: true,
-            email: true,
-            phone: true,
           }
         }
       }
@@ -78,6 +74,11 @@ export const getCotisationUsers = async (req: Request, res: Response) => {
 
     if (!group) {
       return res.status(404).json({ error: "Cotisation group not found" });
+    }
+
+    const requesterId = getRequestUserId(req);
+    if (!requesterId || (!requestIsAdmin(req) && !group.memberIds.includes(requesterId))) {
+      return res.status(403).json({ error: 'Acces refuse aux membres de cette cotisation.' });
     }
 
     res.json({ data: group.members });

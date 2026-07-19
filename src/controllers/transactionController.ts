@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { canAccessUser, getRequestUserId } from '../utils/requestAccess';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma';
+import { canAccessUser, getRequestUserId, requestIsAdmin } from '../utils/requestAccess';
 
 const mapTransaction = (t: any) => {
   const operation = t.operation || {};
@@ -54,10 +52,13 @@ export const getUserTransactions = async (req: any, res: Response) => {
 
 export const getCreditListPending = async (req: Request, res: Response) => {
   try {
+    const requesterId = getRequestUserId(req);
+    if (!requesterId) return res.status(401).json({ error: 'Session invalide.' });
     const transactions = await prisma.transaction.findMany({
       where: { 
         status: "PENDING",
-        purpose: { contains: "CREDIT" }
+        purpose: { contains: "CREDIT" },
+        ...(requestIsAdmin(req) ? {} : { userId: requesterId }),
       },
       orderBy: { createdAt: 'desc' }
     });

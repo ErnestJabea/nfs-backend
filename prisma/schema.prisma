@@ -44,6 +44,7 @@ model User {
   dueDate         DateTime?
   penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
+  tokenVersion    Int       @default(0)
 
   referredBy      User?     @relation("UserReferrals", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   referredById    String?   @db.ObjectId
@@ -51,6 +52,7 @@ model User {
 
   accountIds      String[]  @db.ObjectId @map("accountList")
   transactions    Transaction[]
+  transactionIntents TransactionIntent[]
 
   userGroups      UserGroup[] @relation(fields: [userGroupIds], references: [id])
   userGroupIds    String[]    @db.ObjectId
@@ -67,6 +69,7 @@ model Loan {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   userId          String    @db.ObjectId
   user            User      @relation(fields: [userId], references: [id])
+  transactionId   String?   @db.ObjectId
   amount          Float
   interestRate    Float     @default(0)
   totalInterest   Float?    @default(0)
@@ -184,10 +187,52 @@ model PasswordReset {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String
   code      String
+  attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@map("password_resets")
+}
+
+model TransactionIntent {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String    @db.ObjectId
+  user            User      @relation(fields: [userId], references: [id])
+  type            String
+  payload         Json
+  payloadHash     String
+  summary         String
+  status          String    @default("OTP_PENDING")
+  otpHash         String
+  otpExpiresAt    DateTime
+  otpAttempts     Int       @default(0)
+  resendCount     Int       @default(0)
+  lastOtpSentAt   DateTime
+  deliveryChannel String?
+  deliveryDestination String?
+  idempotencyKey  String
+  result          Json?
+  failureReason   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  consumedAt      DateTime?
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status, createdAt])
+  @@map("transaction_intents")
+}
+
+model CotisationPayment {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  groupId        String   @db.ObjectId
+  periodKey      String
+  amount         Float
+  transactionRef String   @unique
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, groupId, periodKey])
+  @@map("cotisation_payments")
 }
 
 model SystemBalance {
