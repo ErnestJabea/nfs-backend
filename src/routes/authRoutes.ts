@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, adminLogin, getProfile, getSession, logout, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData, getUserById } from '../controllers/authController';
+import { register, login, adminLogin, getProfile, getClientCurrencies, getSession, logout, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData, getUserById } from '../controllers/authController';
 
 import { getCotisations, getProviderByCode, getPrincipalNfs, getCotisationUsers, assignCotisation } from '../controllers/compatibilityController';
 import { getUserTransactions, getCreditListPending, getCumulCredit, generateInvoice, createTransaction, getCreditsPublic, avaliseTransaction, getCreditById, getCreditByCode } from '../controllers/transactionController';
@@ -30,6 +30,7 @@ router.post('/admin/login', authRateLimiter, adminLogin);
 router.get('/session', authMiddleware, getSession);
 router.post('/logout', authMiddleware, logout);
 router.get('/profile', authMiddleware, getProfile);
+router.get('/currencies', authMiddleware, getClientCurrencies);
 
 
 // Password Reset

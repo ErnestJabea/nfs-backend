@@ -50,6 +50,7 @@ const publicSessionUser = (user: any) => ({
   lastName: user.lastName,
   referralCode: user.referralCode,
   kycStatus: user.kycStatus,
+  country: user.country || 'Cameroun',
   roles: user.roles || [],
   role: user.roles?.includes('ADMIN') ? 'ADMIN' : 'USER',
   isActivated: Boolean(user.activated),
@@ -318,6 +319,30 @@ export const getProfile = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error("FATAL ERROR in getProfile:", error);
     return sendErrorResponse(res, error, "Impossible de charger le profil pour le moment.");
+  }
+};
+
+export const getClientCurrencies = async (_req: Request, res: Response) => {
+  try {
+    const currencies = await prisma.currency.findMany({
+      where: { isActive: true },
+      select: {
+        code: true,
+        symbol: true,
+        name: true,
+        rateToBase: true,
+        lastUpdated: true,
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    return res.json({
+      data: currencies.length > 0
+        ? currencies
+        : [{ code: 'XAF', symbol: 'FCFA', name: 'Franc CFA', rateToBase: 1, lastUpdated: null }],
+    });
+  } catch (error: any) {
+    return sendErrorResponse(res, error, 'Impossible de charger les devises pour le moment.');
   }
 };
 
