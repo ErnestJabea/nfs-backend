@@ -44,3 +44,11 @@ export const otpResendRateLimiter = rateLimit({
   legacyHeaders: false,
   message: tooManyRequests,
 });
+
+export const securityRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.SECURITY_RATE_LIMIT || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: tooManyRequests,
+});

@@ -1,4 +1,6 @@
 node_modules
+dist/
+output/
 # Keep environment variables out of version control
 .env
 .env.*
@@ -7,6 +9,7 @@ node_modules
 /generated/prisma
 dev.db
 debug_logs.txt
+backend.runtime*.log
 scratch_*.ts
 scratch_*.js
 check*.ts

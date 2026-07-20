@@ -1,3 +1,4 @@
+require('dotenv/config');
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
@@ -5,11 +6,19 @@ const prisma = new PrismaClient();
 async function run() {
   const users = await prisma.$runCommandRaw({
     update: 'users',
-    updates: [{
-      q: { tokenVersion: { $exists: false } },
-      u: { $set: { tokenVersion: 0 } },
-      multi: true,
-    }],
+    updates: [
+      { q: { tokenVersion: { $exists: false } }, u: { $set: { tokenVersion: 0 } }, multi: true },
+      { q: { preferredTheme: { $exists: false } }, u: { $set: { preferredTheme: 'SYSTEM' } }, multi: true },
+      { q: { locale: { $exists: false } }, u: { $set: { locale: 'fr' } }, multi: true },
+      { q: { timezone: { $exists: false } }, u: { $set: { timezone: 'Africa/Douala' } }, multi: true },
+      { q: { emailNotifications: { $exists: false } }, u: { $set: { emailNotifications: true } }, multi: true },
+      { q: { transactionNotifications: { $ne: true } }, u: { $set: { transactionNotifications: true } }, multi: true },
+      { q: { securityNotifications: { $exists: false } }, u: { $set: { securityNotifications: true } }, multi: true },
+      { q: { pushNotifications: { $exists: false } }, u: { $set: { pushNotifications: true } }, multi: true },
+      { q: { balancePrivacy: { $exists: false } }, u: { $set: { balancePrivacy: false } }, multi: true },
+      { q: { mfaEnabled: { $exists: false } }, u: { $set: { mfaEnabled: false } }, multi: true },
+      { q: { mfaRecoveryCodeHashes: { $exists: false } }, u: { $set: { mfaRecoveryCodeHashes: [] } }, multi: true },
+    ],
   });
   const resets = await prisma.$runCommandRaw({
     update: 'password_resets',

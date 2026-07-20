@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { canAccessUser, getRequestUserId, requestIsAdmin } from '../utils/requestAccess';
+import { guaranteeAmountEndorsed, guaranteeEntries, isGuaranteeActorAuthorized } from '../services/loanGuaranteeService';
 
 const mapTransaction = (t: any) => {
   const operation = t.operation || {};
@@ -52,8 +53,9 @@ export const getUserTransactions = async (req: any, res: Response) => {
 
 export const getCreditListPending = async (req: Request, res: Response) => {
   try {
-    const requesterId = getRequestUserId(req);
-    if (!requesterId) return res.status(401).json({ error: 'Session invalide.' });
+    const requesterValue = getRequestUserId(req);
+    if (!requesterValue) return res.status(401).json({ error: 'Session invalide.' });
+    const requesterId = String(requesterValue);
     const transactions = await prisma.transaction.findMany({
       where: { 
         status: "PENDING",
@@ -66,6 +68,64 @@ export const getCreditListPending = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('getCreditListPending error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getEligibleCreditsForAvalise = async (req: Request, res: Response) => {
+  try {
+    const requesterValue = getRequestUserId(req);
+    if (!requesterValue) return res.status(401).json({ error: 'Session invalide.' });
+    const requesterId = String(requesterValue);
+
+    const loans = await prisma.loan.findMany({
+      where: { status: { in: ['PENDING', 'VALIDATED'] }, transactionId: { not: null } },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, referredById: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const transactionIds = loans.map(loan => loan.transactionId).filter((id): id is string => Boolean(id));
+    const transactions = transactionIds.length
+      ? await prisma.transaction.findMany({ where: { id: { in: transactionIds } } })
+      : [];
+    const transactionById = new Map(transactions.map(transaction => [transaction.id, transaction]));
+
+    const eligible = loans
+      .map((loan) => {
+        const transaction = loan.transactionId ? transactionById.get(loan.transactionId) : null;
+        if (!transaction || transaction.status !== 'PENDING' || !String(transaction.purpose || '').includes('CREDIT')) return null;
+        const operation: any = transaction.operation || {};
+        if (String(operation.code || '').includes('AUTO')) return null;
+        const avalistes = guaranteeEntries(operation.avalistes, operation.avaliste, loan.avalistes);
+        if (!isGuaranteeActorAuthorized({
+          guarantorId: requesterId,
+          borrowerId: loan.userId,
+          borrowerReferrerId: loan.user.referredById,
+          avalistes,
+        })) return null;
+        const totalAmount = Number(loan.amount || transaction.amount || 0);
+        const amountEndorsed = guaranteeAmountEndorsed(operation, loan.avalistes);
+        const remainingGuarantee = Math.max(0, totalAmount - amountEndorsed);
+        if (remainingGuarantee <= 0) return null;
+        return {
+          id: transaction.id,
+          loanId: loan.id,
+          borrowerName: `${loan.user.firstName || ''} ${loan.user.lastName || ''}`.trim() || 'Membre NFS',
+          purpose: loan.purpose || transaction.purpose,
+          amount: totalAmount,
+          amountEndorsed,
+          remainingGuarantee,
+          currency: transaction.currency || 'XAF',
+          createdAt: loan.createdAt || transaction.createdAt,
+          authorization: loan.user.referredById === requesterId ? 'REFERRAL' : 'ASSIGNED',
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({ data: eligible });
+  } catch (error: any) {
+    console.error('getEligibleCreditsForAvalise error:', error);
+    return res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 

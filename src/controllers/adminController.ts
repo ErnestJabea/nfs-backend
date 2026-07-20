@@ -8,6 +8,8 @@ import { getEffectivePermissions } from '../middlewares/permissionMiddleware';
 import { issuePasswordResetCode } from '../services/passwordResetService';
 import { sendResetCode } from '../services/mailService';
 import { sendErrorResponse } from '../utils/errorResponse';
+import { enqueueUserNotification } from '../services/notificationEventService';
+import { scheduleNotificationOutbox } from '../services/notificationOutboxService';
 
 const parseRoles = (body: any): string[] | undefined => {
   const r = body.roles || body.role;
@@ -646,10 +648,64 @@ export const validateTransaction = async (req: any, res: Response) => {
             where: { id: recipientTx.id },
             data: { status: 'SUCCESS', validatedBy: mergedValidators }
           });
+          await enqueueUserNotification(dbTx, {
+            eventKey: `financial:admin:${transferRef}:sender:${senderUser.id}`,
+            type: 'ADMIN_TRANSFER_SENT',
+            aggregateType: 'Transaction',
+            aggregateId: senderTx.id,
+            userId: senderUser.id,
+            title: 'Transfert confirme',
+            body: `${sourceAmount.toLocaleString('fr-FR')} ${senderTx.currency || 'XAF'} ont ete debites de votre compte.`,
+            mandatoryEmail: true,
+            data: { url: '/history', transactionId: senderTx.id },
+            receipt: {
+              transactionId: senderTx.id,
+              type: 'TRANSFERT SORTANT',
+              title: 'Recu de transfert',
+              amount: sourceAmount,
+              currency: senderTx.currency || 'XAF',
+              direction: 'DEBIT',
+              reference: transferRef,
+              occurredAt: (senderTx.createdAt || new Date()).toISOString(),
+              paymentMethod: 'Validation COMEX',
+              purpose: senderTx.purpose || 'Transfert NFS',
+              source: senderTx.sourceAccountType || 'Compte NFS',
+              destination: recipientTx.targetAccountType || 'Compte destinataire',
+              total: sourceAmount,
+              status: 'CONFIRMEE',
+            },
+          });
+          await enqueueUserNotification(dbTx, {
+            eventKey: `financial:admin:${transferRef}:recipient:${recipientUser.id}`,
+            type: 'ADMIN_TRANSFER_RECEIVED',
+            aggregateType: 'Transaction',
+            aggregateId: recipientTx.id,
+            userId: recipientUser.id,
+            title: 'Transfert recu',
+            body: `${convertedAmount.toLocaleString('fr-FR')} ${recipientTx.currency || 'XAF'} ont ete credites sur votre compte.`,
+            mandatoryEmail: true,
+            data: { url: '/history', transactionId: recipientTx.id },
+            receipt: {
+              transactionId: recipientTx.id,
+              type: 'TRANSFERT ENTRANT',
+              title: 'Recu de transfert recu',
+              amount: convertedAmount,
+              currency: recipientTx.currency || 'XAF',
+              direction: 'CREDIT',
+              reference: transferRef,
+              occurredAt: (recipientTx.createdAt || new Date()).toISOString(),
+              paymentMethod: 'Validation COMEX',
+              purpose: recipientTx.purpose || 'Transfert NFS recu',
+              destination: recipientTx.targetAccountType || 'Compte NFS',
+              total: convertedAmount,
+              status: 'CONFIRMEE',
+            },
+          });
 
           return updatedRecipient;
         });
 
+        scheduleNotificationOutbox();
         return res.json({ 
           message: "Validé (2/2) - Transfert exécuté avec succès.", 
           transaction: result 
@@ -705,9 +761,37 @@ export const validateTransaction = async (req: any, res: Response) => {
             where: { id: tx.id },
             data: { status: 'SUCCESS', validatedBy: newValidators }
           });
+          await enqueueUserNotification(dbTx, {
+            eventKey: `financial:admin:${tx.id}:${tx.userId}`,
+            type: 'ADMIN_TRANSACTION_COMPLETED',
+            aggregateType: 'Transaction',
+            aggregateId: tx.id,
+            userId: tx.userId!,
+            title: 'Operation confirmee',
+            body: `${executionAmount.toLocaleString('fr-FR')} ${tx.currency || 'XAF'} ont ete portes sur votre compte.`,
+            mandatoryEmail: true,
+            data: { url: '/history', transactionId: tx.id },
+            receipt: {
+              transactionId: tx.id,
+              type: String((tx.operation as any)?.type || 'OPERATION FINANCIERE').toUpperCase(),
+              title: 'Recu de transaction',
+              amount: executionAmount,
+              currency: tx.currency || 'XAF',
+              direction: sourceAccount ? 'DEBIT' : 'CREDIT',
+              reference: tx.transactionRef || tx.id,
+              occurredAt: (tx.createdAt || new Date()).toISOString(),
+              paymentMethod: 'Validation COMEX',
+              purpose: tx.purpose || 'Operation NFS',
+              source: tx.sourceAccountType || undefined,
+              destination: tx.targetAccountType || undefined,
+              total: executionAmount,
+              status: 'CONFIRMEE',
+            },
+          });
         });
 
         const updatedTx = await prisma.transaction.findUnique({ where: { id: tx.id } });
+        scheduleNotificationOutbox();
         return res.json({ message: "Validé (2/2) - Transaction exécutée avec succès.", transaction: updatedTx });
       }
     }
@@ -1109,6 +1193,10 @@ export const getLoans = async (req: Request, res: Response) => {
           validatedBy: true,
           createdAt: true,
           approvedAt: true,
+          confirmedAt: true,
+          disbursedAt: true,
+          confirmedBy: true,
+          disbursedBy: true,
           dueDate: true,
           penaltyAmount: true,
           updatedAt: true,
@@ -1169,6 +1257,10 @@ export const getLoan = async (req: Request, res: Response) => {
         validatedBy: true,
         createdAt: true,
         approvedAt: true,
+        confirmedAt: true,
+        disbursedAt: true,
+        confirmedBy: true,
+        disbursedBy: true,
         dueDate: true,
         penaltyAmount: true,
         updatedAt: true,
@@ -1199,7 +1291,7 @@ export const getLoan = async (req: Request, res: Response) => {
   }
 };
 
-export const updateLoanStatus = async (req: any, res: Response) => {
+const legacyUpdateLoanStatus = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -1318,6 +1410,182 @@ export const updateLoanStatus = async (req: any, res: Response) => {
   }
 };
 
+export const updateLoanStatus = async (req: any, res: Response) => {
+  try {
+    const loanId = String(req.params.id || '');
+    const requestedStatus = String(req.body?.status || '').toUpperCase();
+    if (!['CONFIRMED', 'APPROVED', 'REJECTED'].includes(requestedStatus)) {
+      return res.status(400).json({ error: 'Statut de credit invalide.' });
+    }
+
+    const adminId = String(req.user?.userId || req.user?.sub || req.user?.id || '');
+    const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
+    if (!adminUser) return res.status(401).json({ error: 'Non authentifie.' });
+    if (!adminUser.roles.includes('COMEX') && !adminUser.roles.includes('ADMIN')) {
+      return res.status(403).json({ error: 'Seul un membre autorise du COMEX peut traiter un credit.' });
+    }
+    const adminName = `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || adminId;
+
+    const result = await prisma.$transaction(async (dbTx) => {
+      const loan = await dbTx.loan.findUnique({ where: { id: loanId } });
+      if (!loan) {
+        const error: any = new Error('Pret non trouve.');
+        error.status = 404;
+        throw error;
+      }
+      const currentStatus = String(loan.status || '').toUpperCase();
+      const validTransition = requestedStatus === 'CONFIRMED'
+        ? ['PENDING', 'VALIDATED'].includes(currentStatus)
+        : requestedStatus === 'APPROVED'
+          ? currentStatus === 'CONFIRMED'
+          : ['PENDING', 'VALIDATED', 'CONFIRMED'].includes(currentStatus);
+      if (!validTransition) {
+        const error: any = new Error(`Transition ${currentStatus} vers ${requestedStatus} interdite.`);
+        error.status = 409;
+        throw error;
+      }
+      if (requestedStatus !== 'REJECTED' && ((loan.createdById && loan.createdById === adminId) || (!loan.createdById && loan.createdBy === adminName))) {
+        const error: any = new Error('Vous ne pouvez pas valider un credit que vous avez vous-meme saisi.');
+        error.status = 403;
+        throw error;
+      }
+
+      const validators = Array.from(new Set([...(loan.validatedBy || []), adminId]));
+      const avalistes = Array.isArray(loan.avalistes) ? loan.avalistes as any[] : [];
+      const concernedUserIds = Array.from(new Set([loan.userId, ...avalistes.map(item => item?.userId).filter(Boolean)]));
+      const associatedTransaction = loan.transactionId
+        ? await dbTx.transaction.findUnique({ where: { id: loan.transactionId } })
+        : await dbTx.transaction.findFirst({
+          where: {
+            userId: loan.userId,
+            status: { in: ['PENDING', 'VALIDATED', 'CONFIRMED'] },
+            OR: [{ targetAccountType: 'CREDIT' }, { purpose: { startsWith: 'CREDIT' } }],
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+      if (requestedStatus === 'CONFIRMED') {
+        const updated = await dbTx.loan.update({
+          where: { id: loan.id },
+          data: { status: 'CONFIRMED', confirmedAt: new Date(), confirmedBy: adminId, validatedBy: validators },
+        });
+        if (associatedTransaction) await dbTx.transaction.update({ where: { id: associatedTransaction.id }, data: { status: 'CONFIRMED', validatedBy: validators } });
+        for (const userId of concernedUserIds) {
+          const isBorrower = userId === loan.userId;
+          await enqueueUserNotification(dbTx, {
+            eventKey: `loan:${loan.id}:confirmed:${userId}`,
+            type: 'LOAN_CONFIRMED',
+            aggregateType: 'Loan',
+            aggregateId: loan.id,
+            userId,
+            title: isBorrower ? 'Demande de credit confirmee' : 'Credit avalise confirme',
+            body: isBorrower
+              ? `Votre demande de ${loan.amount.toLocaleString('fr-FR')} XAF a ete confirmee par le backoffice et attend la validation du versement.`
+              : `Le credit de ${loan.amount.toLocaleString('fr-FR')} XAF que vous avalisez a ete confirme par le backoffice.`,
+            mandatoryEmail: true,
+            data: { url: isBorrower ? '/loans' : '/guarantees', loanId: loan.id, status: 'CONFIRMED' },
+          });
+        }
+        return updated;
+      }
+
+      if (requestedStatus === 'REJECTED') {
+        const updated = await dbTx.loan.update({ where: { id: loan.id }, data: { status: 'REJECTED', validatedBy: validators } });
+        if (associatedTransaction) await dbTx.transaction.update({ where: { id: associatedTransaction.id }, data: { status: 'REJECTED', validatedBy: validators } });
+        for (const userId of concernedUserIds) {
+          const isBorrower = userId === loan.userId;
+          await enqueueUserNotification(dbTx, {
+            eventKey: `loan:${loan.id}:rejected:${userId}`,
+            type: 'LOAN_REJECTED',
+            aggregateType: 'Loan',
+            aggregateId: loan.id,
+            userId,
+            title: 'Demande de credit rejetee',
+            body: isBorrower ? 'Votre demande de credit a ete rejetee par le backoffice.' : 'Le credit que vous avalisiez a ete rejete.',
+            mandatoryEmail: true,
+            data: { url: isBorrower ? '/loans' : '/guarantees', loanId: loan.id, status: 'REJECTED' },
+          });
+        }
+        return updated;
+      }
+
+      const borrower = await dbTx.user.findUnique({ where: { id: loan.userId }, select: { accountIds: true } });
+      if (!borrower) throw new Error('Emprunteur introuvable.');
+      const principalAccount = await dbTx.account.findFirst({ where: { id: { in: borrower.accountIds || [] }, type: 'PRINCIPAL' } });
+      if (!principalAccount) throw new Error('Compte principal de l emprunteur introuvable.');
+      await dbTx.account.update({
+        where: { id: principalAccount.id },
+        data: { currentBalance: { increment: loan.amount }, availableBalance: { increment: loan.amount } },
+      });
+      if (!associatedTransaction) throw new Error('Transaction de credit associee introuvable.');
+      const creditTransaction = await dbTx.transaction.update({
+        where: { id: associatedTransaction.id },
+        data: { status: 'SUCCESS', validatedBy: validators, approvedAt: new Date() },
+      });
+      const now = new Date();
+      const updated = await dbTx.loan.update({
+        where: { id: loan.id },
+        data: {
+          status: 'APPROVED',
+          approvedAt: now,
+          disbursedAt: now,
+          disbursedBy: adminId,
+          validatedBy: validators,
+          dueDate: new Date(now.getTime() + Math.max(1, loan.duration || 1) * 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+      await enqueueUserNotification(dbTx, {
+        eventKey: `financial:loan-disbursement:${loan.id}:${loan.userId}`,
+        type: 'LOAN_DISBURSED',
+        aggregateType: 'Loan',
+        aggregateId: loan.id,
+        userId: loan.userId,
+        title: 'Credit verse',
+        body: `${loan.amount.toLocaleString('fr-FR')} XAF ont ete verses sur votre compte principal.`,
+        mandatoryEmail: true,
+        data: { url: '/history', loanId: loan.id, transactionId: creditTransaction.id, status: 'APPROVED' },
+        receipt: {
+          transactionId: creditTransaction.id,
+          type: 'VERSEMENT DE CREDIT',
+          title: 'Recu de versement de credit',
+          amount: loan.amount,
+          currency: creditTransaction.currency || 'XAF',
+          direction: 'CREDIT',
+          reference: creditTransaction.transactionRef || `LOAN-${loan.id}`,
+          occurredAt: now.toISOString(),
+          paymentMethod: 'Versement NFS',
+          purpose: loan.purpose || 'Versement de credit',
+          destination: 'Compte principal',
+          fees: 0,
+          total: loan.amount,
+          status: 'CONFIRMEE',
+          metadata: { loanId: loan.id, dueDate: updated.dueDate?.toISOString() },
+        },
+      });
+      for (const userId of concernedUserIds.filter(id => id !== loan.userId)) {
+        await enqueueUserNotification(dbTx, {
+          eventKey: `loan:${loan.id}:disbursed:${userId}`,
+          type: 'GUARANTEED_LOAN_DISBURSED',
+          aggregateType: 'Loan',
+          aggregateId: loan.id,
+          userId,
+          title: 'Credit avalise verse',
+          body: `Le credit de ${loan.amount.toLocaleString('fr-FR')} XAF que vous avalisez a ete verse a l'emprunteur.`,
+          mandatoryEmail: true,
+          data: { url: '/guarantees', loanId: loan.id, status: 'APPROVED' },
+        });
+      }
+      return updated;
+    });
+
+    scheduleNotificationOutbox();
+    const updatedLoan = await prisma.loan.findUnique({ where: { id: result.id }, include: { user: true } });
+    return res.json(updatedLoan);
+  } catch (error: any) {
+    return sendErrorResponse(res, error, 'Impossible de mettre a jour le statut du credit.');
+  }
+};
+
 export const createLoan = async (req: any, res: Response) => {
   try {
     const { userId, amount, duration, purpose, avalistes, interestRate } = req.body;
@@ -1384,11 +1652,13 @@ export const createLoan = async (req: any, res: Response) => {
     const existingLoan = await prisma.loan.findFirst({
       where: {
         userId: userId as string,
-        status: { in: ['PENDING', 'APPROVED'] }
+        status: { in: ['PENDING', 'VALIDATED', 'CONFIRMED', 'APPROVED'] }
       }
     });
     if (existingLoan) {
-      const statusLabel = existingLoan.status === 'PENDING' ? 'en attente de validation' : 'déjà actif';
+      const statusLabel = ['PENDING', 'VALIDATED', 'CONFIRMED'].includes(existingLoan.status)
+        ? 'en cours de traitement'
+        : 'déjà actif';
       return res.status(400).json({
         error: `${borrower.firstName} ${borrower.lastName} possède déjà un crédit ${statusLabel} (montant : ${existingLoan.amount.toLocaleString('fr-FR')} XAF). Un nouveau crédit ne peut être créé qu'après le remboursement ou le rejet du précédent.`
       });
@@ -1480,22 +1750,51 @@ export const createLoan = async (req: any, res: Response) => {
     const adminUser = adminId ? await prisma.user.findUnique({ where: { id: adminId } }) : null;
     const adminName = adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin Système';
 
-    const loan = await prisma.loan.create({
-      data: {
+    const loan = await prisma.$transaction(async (dbTx) => {
+      const transaction = await dbTx.transaction.create({
+        data: {
+          userId,
+          purpose: `CREDIT - ${purpose || 'Credit NFS'}`,
+          amount: loanAmount,
+          status: 'PENDING',
+          transactionRef: generatePublicCode('LOAN', 8),
+          targetAccountType: 'CREDIT',
+          currency: 'XAF',
+          createdBy: adminName,
+          createdById: adminId || null,
+          operation: { type: 'loan_request_admin', durationMonths: loanDuration, avalistes: validatedAvalistes },
+        },
+      });
+      const createdLoan = await dbTx.loan.create({
+        data: {
+          userId,
+          transactionId: transaction.id,
+          amount: loanAmount,
+          duration: loanDuration,
+          interestRate: loanRate,
+          totalInterest: loanAmount * (loanRate / 100),
+          purpose,
+          status: 'PENDING',
+          avalistes: validatedAvalistes,
+          createdBy: adminName,
+          createdById: adminId || null,
+        },
+        include: { user: true },
+      });
+      await enqueueUserNotification(dbTx, {
+        eventKey: `loan:${createdLoan.id}:requested:${userId}`,
+        type: 'LOAN_REQUEST_RECEIVED',
+        aggregateType: 'Loan',
+        aggregateId: createdLoan.id,
         userId,
-        amount: loanAmount,
-        duration: loanDuration,
-        interestRate: loanRate,
-        totalInterest: loanAmount * (loanRate / 100),
-        purpose,
-        status: 'PENDING',
-        avalistes: validatedAvalistes,
-        createdBy: adminName,
-        createdById: adminId || null
-      },
-      include: { user: true }
+        title: 'Demande de credit recue',
+        body: `Votre demande de ${loanAmount.toLocaleString('fr-FR')} XAF est en cours d'etude.`,
+        data: { url: '/loans', loanId: createdLoan.id },
+      });
+      return createdLoan;
     });
 
+    scheduleNotificationOutbox();
     res.status(201).json(loan);
   } catch (error: any) {
     console.error('createLoan error:', error);

@@ -5,6 +5,7 @@ import { getOtpHmacSecret } from '../config/security';
 import { sendErrorResponse } from '../utils/errorResponse';
 import { deliverTransactionOtp } from '../services/otpDeliveryService';
 import { executeTransactionIntent, prepareTransactionPayload } from '../services/transactionExecutionService';
+import { scheduleNotificationOutbox } from '../services/notificationOutboxService';
 
 const OTP_TTL_MS = 3 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
@@ -150,6 +151,7 @@ export const confirmTransactionIntent = async (req: any, res: Response) => {
         where: { id: intent.id },
         data: { status: 'COMPLETED', result, consumedAt: new Date(), otpHash: crypto.randomBytes(32).toString('hex') },
       });
+      scheduleNotificationOutbox();
       return res.json(publicIntent(completed));
     } catch (executionError: any) {
       await prisma.transactionIntent.update({

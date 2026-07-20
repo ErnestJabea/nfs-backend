@@ -9,6 +9,9 @@ import { sendErrorResponse } from '../utils/errorResponse';
 import { getJwtSecret, getSessionCookieOptions, getSessionTtlSeconds } from '../config/security';
 import { canAccessUser } from '../utils/requestAccess';
 import { hashPasswordResetCode, issuePasswordResetCode } from '../services/passwordResetService';
+import { createLoginMfaChallenge } from '../security/mfaService';
+import { passwordIsStrong, passwordPolicyError } from '../security/passwordPolicy';
+import { resolveCountry } from '../security/countries';
 
 
 export const debugLog = (msg: string) => {
@@ -21,12 +24,7 @@ const createPublicIdentifier = (prefix: string, byteLength = 6) => {
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value: unknown) => String(value || '').trim().replace(/[\s()-]/g, '');
-const passwordIsStrong = (value: unknown) => {
-  const password = String(value || '');
-  return password.length >= 12 && password.length <= 128 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
-};
-
-const createSession = (user: any) => {
+export const createSession = (user: any) => {
   const csrf = crypto.randomBytes(32).toString('base64url');
   const token = jwt.sign(
     {
@@ -42,7 +40,7 @@ const createSession = (user: any) => {
   return { token, csrf };
 };
 
-const publicSessionUser = (user: any) => ({
+export const publicSessionUser = (user: any) => ({
   id: user.id,
   phone: user.phone,
   email: user.email,
@@ -50,10 +48,12 @@ const publicSessionUser = (user: any) => ({
   lastName: user.lastName,
   referralCode: user.referralCode,
   kycStatus: user.kycStatus,
-  country: user.country || 'Cameroun',
+  country: resolveCountry(user.countryCode || user.country)?.name || user.country || 'Cameroun',
+  countryCode: resolveCountry(user.countryCode || user.country)?.code || user.countryCode || null,
   roles: user.roles || [],
   role: user.roles?.includes('ADMIN') ? 'ADMIN' : 'USER',
   isActivated: Boolean(user.activated),
+  mfaEnabled: Boolean(user.mfaEnabled),
 });
 
 export const register = async (req: Request, res: Response) => {
@@ -70,7 +70,7 @@ export const register = async (req: Request, res: Response) => {
     }
     if (!passwordIsStrong(password)) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir 12 a 128 caracteres, avec majuscule, minuscule et chiffre.',
+        error: passwordPolicyError(password),
         code: 'WEAK_PASSWORD',
       });
     }
@@ -168,6 +168,14 @@ export const login = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Compte inactif. Contactez un administrateur.', code: 'ACCOUNT_DISABLED' });
     }
 
+    if (user.mfaEnabled && user.mfaSecretEncrypted) {
+      return res.status(202).json({
+        mfaRequired: true,
+        challengeToken: createLoginMfaChallenge(user),
+        expiresIn: 300,
+      });
+    }
+
     const session = createSession(user);
     res.cookie('token', session.token, getSessionCookieOptions());
     const safeUser = publicSessionUser(user);
@@ -197,6 +205,14 @@ export const adminLogin = async (req: Request, res: Response) => {
 
     if (!user || !user.activated || !(await bcrypt.compare(String(password || ''), user.password))) {
       return res.status(401).json({ error: 'Identifiants administrateur incorrects' });
+    }
+
+    if (user.mfaEnabled && user.mfaSecretEncrypted) {
+      return res.status(202).json({
+        mfaRequired: true,
+        challengeToken: createLoginMfaChallenge(user),
+        expiresIn: 300,
+      });
     }
 
     const session = createSession(user);
@@ -231,7 +247,7 @@ export const logout = async (req: any, res: Response) => {
   }
 };
 
-const formatUserResponse = async (user: any) => {
+export const formatUserResponse = async (user: any) => {
   let mobileAccounts: any[] = [];
   try {
     const accounts = await prisma.account.findMany({
@@ -269,13 +285,28 @@ const formatUserResponse = async (user: any) => {
   }
 
   // On crée une version légère et structurée pour le mobile
-  const { password, uniqueKey, tokenVersion, documentUrl, ribUrl, addressImageUrl, ...lightUser } = user;
+  const {
+    password,
+    uniqueKey,
+    tokenVersion,
+    documentUrl,
+    ribUrl,
+    addressImageUrl,
+    mfaSecretEncrypted,
+    mfaRecoveryCodeHashes,
+    mfaLastUsedStep,
+    ...lightUser
+  } = user;
+
+  const country = resolveCountry(user.countryCode || user.country);
 
   return {
     ...lightUser,
     firstName: user.firstName || "",
     lastName: user.lastName || "",
     email: user.email || "",
+    country: country?.name || user.country || 'Cameroun',
+    countryCode: country?.code || user.countryCode || null,
     currency: user.currency || "XAF",
     fluxIn: user.fluxIn || 0,
     fluxOut: user.fluxOut || 0,
@@ -466,7 +497,7 @@ export const getDashboardData = async (req: any, res: Response) => {
 };
 
 export const getAvaliseCapacity = async (req: any, res: Response) => {
-  const { id } = req.params;
+  const id = String(req.params.id || '');
   try {
     if (!canAccessUser(req, id)) {
       return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
@@ -586,7 +617,10 @@ export const resetPassword = async (req: Request, res: Response) => {
     const code = String(req.body?.code || '').trim();
     const password = req.body?.password;
     if (!email || !/^\d{8}$/.test(code) || !passwordIsStrong(password)) {
-      return res.status(400).json({ error: 'Donnees de reinitialisation invalides.', code: 'INVALID_RESET_REQUEST' });
+      return res.status(400).json({
+        error: passwordPolicyError(password) || 'Donnees de reinitialisation invalides.',
+        code: 'INVALID_RESET_REQUEST',
+      });
     }
 
     const resetEntry = await prisma.passwordReset.findFirst({
