@@ -466,7 +466,7 @@ export const getDashboardData = async (req: any, res: Response) => {
 };
 
 export const getAvaliseCapacity = async (req: any, res: Response) => {
-  const { id } = req.params;
+  const id = String(req.params.id || '');
   try {
     if (!canAccessUser(req, id)) {
       return res.status(403).json({ error: "Acces refuse a cet utilisateur." });

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { register, login, adminLogin, getProfile, getClientCurrencies, getSession, logout, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData, getUserById } from '../controllers/authController';
 
 import { getCotisations, getProviderByCode, getPrincipalNfs, getCotisationUsers, assignCotisation } from '../controllers/compatibilityController';
-import { getUserTransactions, getCreditListPending, getCumulCredit, generateInvoice, createTransaction, getCreditsPublic, avaliseTransaction, getCreditById, getCreditByCode } from '../controllers/transactionController';
+import { getUserTransactions, getCreditListPending, getEligibleCreditsForAvalise, getCumulCredit, generateInvoice, createTransaction, getCreditsPublic, getCreditById, getCreditByCode } from '../controllers/transactionController';
 import { requestEpargne, validateEpargne, directEpargne } from '../controllers/epargneController';
 
 
@@ -63,6 +63,7 @@ router.get('/credits', getCreditsPublic);
 router.get('/credits/code/:code', authMiddleware, getCreditByCode);
 router.get('/credits/:id', authMiddleware, getCreditById);
 router.get('/credit-list-pending', authMiddleware, getCreditListPending);
+router.get('/credit-list-eligible-for-avalise', authMiddleware, getEligibleCreditsForAvalise);
 router.get('/credit-pending/:userId', authMiddleware, getCumulCredit);
 router.get('/credit-success/:userId', authMiddleware, getCumulCredit);
 router.get('/transaction/generate-invoice/:id', authMiddleware, generateInvoice);

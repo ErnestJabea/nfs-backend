@@ -52,8 +52,9 @@ export const getUserTransactions = async (req: any, res: Response) => {
 
 export const getCreditListPending = async (req: Request, res: Response) => {
   try {
-    const requesterId = getRequestUserId(req);
-    if (!requesterId) return res.status(401).json({ error: 'Session invalide.' });
+    const requesterValue = getRequestUserId(req);
+    if (!requesterValue) return res.status(401).json({ error: 'Session invalide.' });
+    const requesterId = String(requesterValue);
     const transactions = await prisma.transaction.findMany({
       where: { 
         status: "PENDING",
@@ -66,6 +67,56 @@ export const getCreditListPending = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('getCreditListPending error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getEligibleCreditsForAvalise = async (req: Request, res: Response) => {
+  try {
+    const requesterId = getRequestUserId(req);
+    if (!requesterId) return res.status(401).json({ error: 'Session invalide.' });
+
+    const referrals = await prisma.user.findMany({
+      where: { referredById: requesterId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!referrals.length) return res.json({ data: [] });
+
+    const borrowerById = new Map(referrals.map((user) => [
+      user.id,
+      `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Filleul NFS',
+    ]));
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId: { in: referrals.map((user) => user.id) },
+        status: 'PENDING',
+        purpose: { contains: 'CREDIT' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const eligible = transactions
+      .filter((transaction) => !String((transaction.operation as any)?.code || '').includes('AUTO'))
+      .map((transaction) => {
+        const operation: any = transaction.operation || {};
+        const totalAmount = Number(transaction.amount || 0);
+        const amountEndorsed = Number(operation.amountEndorsed || 0);
+        return {
+          id: transaction.id,
+          borrowerName: borrowerById.get(String(transaction.userId)) || 'Filleul NFS',
+          purpose: transaction.purpose,
+          amount: totalAmount,
+          amountEndorsed,
+          remainingGuarantee: Math.max(0, totalAmount - amountEndorsed),
+          currency: transaction.currency || 'XAF',
+          createdAt: transaction.createdAt,
+        };
+      })
+      .filter((transaction) => transaction.remainingGuarantee > 0);
+
+    return res.json({ data: eligible });
+  } catch (error: any) {
+    console.error('getEligibleCreditsForAvalise error:', error);
+    return res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };
 
