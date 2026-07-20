@@ -10,11 +10,14 @@ import authRoutes from './routes/authRoutes';
 import walletRoutes from './routes/walletRoutes';
 import adminRoutes from './routes/adminRoutes';
 import transactionIntentRoutes from './routes/transactionIntentRoutes';
+import paymentRoutes from './routes/paymentRoutes';
+import paymentWebhookRoutes from './routes/paymentWebhookRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
 import { sendErrorResponse } from './utils/errorResponse';
 import { isAllowedCorsOrigin, validateSecurityConfiguration } from './config/security';
 import { sanitizeJsonResponses } from './middlewares/responseSanitizer';
+import { startPaymentReconciliationCron } from './services/paymentReconciliationService';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -46,6 +49,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// Payment signatures require the untouched request body. Keep this mount before express.json().
+app.use('/api/payments/webhooks', paymentWebhookRoutes);
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 app.use(express.urlencoded({ limit: process.env.URLENCODED_BODY_LIMIT || '256kb', extended: false }));
 app.use(sanitizeJsonResponses);
@@ -60,6 +65,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/wallets', walletRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transaction-intents', transactionIntentRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Mobile Compatibility Aliases
 app.use('/public/v1', authRoutes); // Aliasing /public/v1/sign_in to /api/auth/login
@@ -84,6 +90,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 startPenaltyCron();
+startPaymentReconciliationCron();
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Available at http://localhost:${PORT}`);

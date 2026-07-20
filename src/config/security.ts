@@ -90,5 +90,32 @@ export const validateSecurityConfiguration = () => {
         throw new Error(`Production CORS origin must use HTTPS: ${origin}`);
       }
     }
+
+    const flutterwaveEnabled = String(process.env.FLW_PAYMENTS_ENABLED).toLowerCase() === 'true';
+    const stripeEnabled = String(process.env.STRIPE_PAYMENTS_ENABLED).toLowerCase() === 'true';
+    const paymentsEnabled = flutterwaveEnabled || stripeEnabled;
+    const paymentReturnUrl = process.env.PAYMENT_RETURN_URL;
+    if (paymentsEnabled && (!paymentReturnUrl || !paymentReturnUrl.startsWith('https://'))) {
+      throw new Error('PAYMENT_RETURN_URL must be configured with HTTPS when payments are enabled.');
+    }
+    if (paymentsEnabled && String(process.env.PAYMENTS_ENVIRONMENT).toLowerCase() !== 'production') {
+      throw new Error('PAYMENTS_ENVIRONMENT must be production when payment providers are enabled in production.');
+    }
+    if (flutterwaveEnabled) {
+      if (!process.env.FLW_SECRET_KEY || !process.env.FLW_SECRET_HASH) {
+        throw new Error('Flutterwave payments require FLW_SECRET_KEY and FLW_SECRET_HASH.');
+      }
+      if (/TEST|SANDBOX/i.test(process.env.FLW_SECRET_KEY)) {
+        throw new Error('A Flutterwave sandbox key cannot be enabled in production.');
+      }
+    }
+    if (stripeEnabled) {
+      if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+        throw new Error('Stripe payments require STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.');
+      }
+      if (process.env.STRIPE_SECRET_KEY.startsWith('sk_test_')) {
+        throw new Error('A Stripe test key cannot be enabled in production.');
+      }
+    }
   }
 };

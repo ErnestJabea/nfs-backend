@@ -53,6 +53,7 @@ model User {
   accountIds      String[]  @db.ObjectId @map("accountList")
   transactions    Transaction[]
   transactionIntents TransactionIntent[]
+  externalPayments ExternalPayment[]
 
   userGroups      UserGroup[] @relation(fields: [userGroupIds], references: [id])
   userGroupIds    String[]    @db.ObjectId
@@ -220,6 +221,63 @@ model TransactionIntent {
   @@unique([userId, idempotencyKey])
   @@index([userId, status, createdAt])
   @@map("transaction_intents")
+}
+
+model ExternalPayment {
+  id                    String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String    @db.ObjectId
+  user                  User      @relation(fields: [userId], references: [id])
+  intentId              String    @unique @db.ObjectId
+  provider              String
+  method                String
+  targetAccountType     String
+  amount                Int
+  currency              String    @default("XAF")
+  reference             String    @unique
+  providerSessionId     String?   @unique
+  providerPaymentId     String?   @unique
+  checkoutUrl           String?
+  status                String    @default("PENDING")
+  providerStatus        String?
+  failureReason         String?
+  creditedTransactionId String?   @db.ObjectId
+  creditedAt            DateTime?
+  expiresAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId, status, createdAt])
+  @@index([provider, status, createdAt])
+  @@map("external_payments")
+}
+
+model PaymentEvent {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  provider         String
+  providerEventId  String
+  eventType        String
+  paymentReference String?
+  payloadHash      String
+  processedAt      DateTime @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([paymentReference, processedAt])
+  @@map("payment_events")
+}
+
+model LedgerEntry {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  journalReference String
+  paymentId        String   @db.ObjectId
+  accountCode      String
+  direction        String
+  amount           Int
+  currency         String   @default("XAF")
+  createdAt        DateTime @default(now())
+
+  @@unique([journalReference, accountCode, direction])
+  @@index([paymentId, createdAt])
+  @@map("ledger_entries")
 }
 
 model CotisationPayment {

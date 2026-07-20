@@ -1,5 +1,7 @@
 import prisma from '../utils/prisma';
 import { calculateTransferFee } from '../controllers/adminController';
+import { createFundingCheckout } from './paymentInitiationService';
+import { assertProviderAvailable } from './paymentProviderService';
 
 class TransactionError extends Error {
   status: number;
@@ -27,6 +29,17 @@ const amountValue = (value: unknown) => {
     throw new TransactionError('Montant de transaction invalide.', 'INVALID_AMOUNT');
   }
   return amount;
+};
+
+const cameroonMobileNumber = (value: unknown) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('00237')) digits = digits.slice(2);
+  if (digits.startsWith('0') && digits.length === 10) digits = digits.slice(1);
+  if (digits.length === 9) digits = `237${digits}`;
+  if (!/^2376\d{8}$/.test(digits)) {
+    throw new TransactionError('Numero Mobile Money camerounais invalide.', 'INVALID_MOBILE_MONEY_PHONE');
+  }
+  return digits;
 };
 
 const objectIdValue = (value: unknown, name: string) => {
@@ -98,6 +111,37 @@ const getAvaliseCapacity = async (db: any, userId: string) => {
 export const prepareTransactionPayload = async (userId: string, typeValue: unknown, input: any) => {
   const type = String(typeValue || '').toUpperCase();
   const payload = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+
+  if (type === 'ACCOUNT_FUNDING') {
+    const amount = amountValue(payload.amount);
+    const minimum = Number(process.env.PAYMENT_MIN_AMOUNT_XAF || 100);
+    const maximum = Number(process.env.PAYMENT_MAX_AMOUNT_XAF || 5_000_000);
+    if (amount < minimum || amount > maximum) {
+      throw new TransactionError(
+        `Le montant doit etre compris entre ${minimum.toLocaleString('fr-FR')} et ${maximum.toLocaleString('fr-FR')} XAF.`,
+        'PAYMENT_AMOUNT_OUT_OF_RANGE',
+      );
+    }
+    const targetAccountType = accountType(payload.targetAccountType || payload.accountType || 'PRINCIPAL');
+    const { provider, method } = assertProviderAvailable(payload.provider, payload.method);
+    const [account, user] = await Promise.all([
+      getOwnedAccount(prisma, userId, targetAccountType),
+      prisma.user.findUnique({ where: { id: userId }, select: { email: true, phone: true } }),
+    ]);
+    if (account.currency !== 'XAF') {
+      throw new TransactionError('Seuls les comptes XAF peuvent etre approvisionnes.', 'PAYMENT_CURRENCY_UNSUPPORTED');
+    }
+    if (!user) throw new TransactionError('Utilisateur introuvable.', 'USER_NOT_FOUND', 404);
+    if (provider === 'FLUTTERWAVE' && !user.email) {
+      throw new TransactionError('Ajoutez une adresse email verifiee a votre profil avant ce paiement.', 'PAYMENT_EMAIL_REQUIRED');
+    }
+    const phone = method === 'CARD' ? user.phone : cameroonMobileNumber(payload.phone || user.phone);
+    return {
+      type,
+      payload: { amount, targetAccountType, provider, method, phone },
+      summary: `Approvisionnement de ${amount.toLocaleString('fr-FR')} XAF sur ${targetAccountType} via ${provider}`,
+    };
+  }
 
   if (type === 'INTERNAL_TRANSFER') {
     const amount = amountValue(payload.amount);
@@ -232,6 +276,10 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
 
 export const executeTransactionIntent = async (intent: any) => {
   const payload: any = intent.payload;
+
+  if (intent.type === 'ACCOUNT_FUNDING') {
+    return createFundingCheckout(intent, payload);
+  }
 
   if (intent.type === 'INTERNAL_TRANSFER') {
     return prisma.$transaction(async (tx) => {
