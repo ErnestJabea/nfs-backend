@@ -34,6 +34,7 @@ model User {
   referrerName    String?
   address         String?
   addressImageUrl String?
+  countryCode     String?
   swiftCode       String?   @default("")
   averageIncome   Float?
   beneficiaries   Json?     @default("[]")
@@ -45,6 +46,19 @@ model User {
   penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
   tokenVersion    Int       @default(0)
+  preferredTheme  String    @default("SYSTEM")
+  locale          String    @default("fr")
+  timezone        String    @default("Africa/Douala")
+  emailNotifications Boolean @default(true)
+  transactionNotifications Boolean @default(true)
+  securityNotifications Boolean @default(true)
+  pushNotifications Boolean @default(true)
+  balancePrivacy  Boolean   @default(false)
+  mfaEnabled      Boolean   @default(false)
+  mfaSecretEncrypted String?
+  mfaRecoveryCodeHashes String[] @default([])
+  mfaVerifiedAt   DateTime?
+  mfaLastUsedStep Int?
 
   referredBy      User?     @relation("UserReferrals", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   referredById    String?   @db.ObjectId
@@ -54,6 +68,10 @@ model User {
   transactions    Transaction[]
   transactionIntents TransactionIntent[]
   externalPayments ExternalPayment[]
+  mfaEnrollments  MfaEnrollment[]
+  pushSubscriptions PushSubscription[]
+  notifications   Notification[]
+  receipts        Receipt[]
 
   userGroups      UserGroup[] @relation(fields: [userGroupIds], references: [id])
   userGroupIds    String[]    @db.ObjectId
@@ -66,6 +84,26 @@ model User {
   @@map("users")
 }
 
+model MfaEnrollment {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId              String    @db.ObjectId
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretEncrypted     String
+  confirmationOtpHash String
+  otpExpiresAt        DateTime
+  expiresAt           DateTime
+  attempts            Int       @default(0)
+  deliveryChannel     String
+  deliveryDestination String
+  deliveryVerifiedAt  DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([userId])
+  @@index([expiresAt])
+  @@map("mfa_enrollments")
+}
+
 model Loan {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   userId          String    @db.ObjectId
@@ -76,13 +114,17 @@ model Loan {
   totalInterest   Float?    @default(0)
   duration        Int       // in months
   purpose         String?
-  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
+  status          String    @default("PENDING") // PENDING, VALIDATED, CONFIRMED, APPROVED, REJECTED, PAID
   avalistes       Json?     @default("[]")     // List of { userId, amount, interestShare }
   createdBy       String?
   createdById     String?   @db.ObjectId
   validatedBy     String[]  @default([])
   createdAt       DateTime? @default(now())
   approvedAt      DateTime?
+  confirmedAt     DateTime?
+  disbursedAt     DateTime?
+  confirmedBy     String?
+  disbursedBy     String?
   dueDate         DateTime?
   penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
@@ -221,6 +263,85 @@ model TransactionIntent {
   @@unique([userId, idempotencyKey])
   @@index([userId, status, createdAt])
   @@map("transaction_intents")
+}
+
+model PushSubscription {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint       String   @unique
+  p256dh         String
+  auth           String
+  userAgent      String?
+  enabled        Boolean  @default(true)
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId, enabled])
+  @@map("push_subscriptions")
+}
+
+model Notification {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String
+  type        String
+  title       String
+  body        String
+  data        Json?     @default("{}")
+  receiptId   String?   @db.ObjectId
+  pushStatus  String    @default("PENDING")
+  emailStatus String    @default("PENDING")
+  pushSentAt  DateTime?
+  emailSentAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model Receipt {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @db.ObjectId
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId          String
+  transactionId    String?  @db.ObjectId
+  receiptNumber    String   @unique
+  type             String
+  title            String
+  snapshot         Json
+  verificationCode String   @unique
+  pdfSha256        String?
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@index([userId, createdAt])
+  @@map("receipts")
+}
+
+model OutboxEvent {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  eventKey      String    @unique
+  type          String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  availableAt   DateTime  @default(now())
+  lockedAt      DateTime?
+  processedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
 }
 
 model ExternalPayment {

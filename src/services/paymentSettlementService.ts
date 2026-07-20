@@ -1,5 +1,7 @@
 import prisma from '../utils/prisma';
 import { VerifiedProviderPayment } from './paymentProviderService';
+import { enqueueUserNotification } from './notificationEventService';
+import { scheduleNotificationOutbox } from './notificationOutboxService';
 
 type ProviderName = 'FLUTTERWAVE' | 'STRIPE';
 
@@ -42,7 +44,7 @@ export const reconcileSuccessfulPayment = async (
   event: ProviderEvent,
 ) => {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       await createEvent(tx, provider, event, verified.reference);
       const payment = await tx.externalPayment.findUnique({ where: { reference: verified.reference } });
       if (!payment) return { outcome: 'UNKNOWN_PAYMENT' };
@@ -154,8 +156,38 @@ export const reconcileSuccessfulPayment = async (
           failureReason: null,
         },
       });
+      await enqueueUserNotification(tx, {
+        eventKey: `financial:funding:${payment.reference}:${payment.userId}`,
+        type: 'ACCOUNT_FUNDING_COMPLETED',
+        aggregateType: 'ExternalPayment',
+        aggregateId: payment.id,
+        userId: payment.userId,
+        title: 'Approvisionnement confirme',
+        body: `${payment.amount.toLocaleString('fr-FR')} ${payment.currency} ont ete credites sur votre compte ${payment.targetAccountType}.`,
+        mandatoryEmail: true,
+        data: { url: '/history', transactionId: transaction.id, paymentId: payment.id },
+        receipt: {
+          transactionId: transaction.id,
+          type: 'APPROVISIONNEMENT',
+          title: 'Recu d approvisionnement',
+          amount: payment.amount,
+          currency: payment.currency,
+          direction: 'CREDIT',
+          reference: payment.reference,
+          occurredAt: (transaction.createdAt || new Date()).toISOString(),
+          paymentMethod: `${provider} - ${payment.method}`,
+          purpose: `Approvisionnement ${payment.targetAccountType}`,
+          destination: payment.targetAccountType,
+          fees: 0,
+          total: payment.amount,
+          status: 'CONFIRMEE',
+          providerReference: verified.providerPaymentId,
+        },
+      });
       return { outcome: 'CREDITED', transactionId: transaction.id };
     });
+    if (result.outcome === 'CREDITED') scheduleNotificationOutbox();
+    return result;
   } catch (error: any) {
     if (error?.code === 'P2002') return { outcome: 'DUPLICATE_EVENT' };
     throw error;

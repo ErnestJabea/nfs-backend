@@ -12,12 +12,14 @@ import adminRoutes from './routes/adminRoutes';
 import transactionIntentRoutes from './routes/transactionIntentRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import paymentWebhookRoutes from './routes/paymentWebhookRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
 import { sendErrorResponse } from './utils/errorResponse';
 import { isAllowedCorsOrigin, validateSecurityConfiguration } from './config/security';
 import { sanitizeJsonResponses } from './middlewares/responseSanitizer';
 import { startPaymentReconciliationCron } from './services/paymentReconciliationService';
+import { startNotificationOutboxWorker } from './services/notificationOutboxService';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -66,6 +68,7 @@ app.use('/api/wallets', walletRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transaction-intents', transactionIntentRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Mobile Compatibility Aliases
 app.use('/public/v1', authRoutes); // Aliasing /public/v1/sign_in to /api/auth/login
@@ -91,6 +94,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 startPenaltyCron();
 startPaymentReconciliationCron();
+startNotificationOutboxWorker();
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Available at http://localhost:${PORT}`);

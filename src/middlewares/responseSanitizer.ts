@@ -5,6 +5,9 @@ const sensitiveKeys = new Set([
   'uniquekey',
   'tokenversion',
   'otphash',
+  'confirmationotphash',
+  'mfasecretencrypted',
+  'mfarecoverycodehashes',
 ]);
 
 const sanitize = (value: any, seen = new WeakSet<object>()): any => {

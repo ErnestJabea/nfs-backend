@@ -5,13 +5,15 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && node scripts/copy-static-assets.js",
     "start": "node dist/index.js",
-    "test": "npm run test:payments",
+    "test": "node --test -r ts-node/register tests/paymentSecurity.test.ts tests/mfaSecurity.test.ts tests/notificationReceipt.test.ts tests/loanGuaranteeSecurity.test.ts",
     "test:payments": "node --test -r ts-node/register tests/paymentSecurity.test.ts",
     "export:prisma": "node export-prisma.js",
     "security:audit": "npm audit --omit=dev",
-    "security:migrate": "node scripts/backfill-security-fields.js && prisma db push"
+    "security:migrate": "node scripts/backfill-security-fields.js && prisma db push",
+    "loans:migrate": "node scripts/backfill-loan-transactions.js",
+    "receipt:sample": "node -r ts-node/register scripts/generate-receipt-sample.ts"
   },
   "keywords": [],
   "author": "",
@@ -34,10 +36,12 @@
     "morgan": "^1.11.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "qs": "^6.15.3",
     "stripe": "^22.3.2",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -49,8 +53,10 @@
     "@types/node": "^25.6.0",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
+    "@types/web-push": "^3.6.4",
     "cross-env": "^10.1.0",
     "nodemon": "^3.1.14",
     "prisma": "^6.4.1",

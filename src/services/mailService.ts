@@ -54,6 +54,49 @@ export const sendTransactionOtpEmail = async (email: string, code: string, summa
   });
 };
 
+export const isSmtpConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
+export const sendNotificationEmail = async (input: {
+  to: string;
+  subject: string;
+  recipientName: string;
+  title: string;
+  body: string;
+  receiptNumber?: string;
+  receiptPdf?: Buffer;
+}) => {
+  if (!isSmtpConfigured()) throw new Error('SMTP is not configured.');
+  const greeting = input.recipientName ? `Bonjour ${input.recipientName},` : 'Bonjour,';
+  const receiptText = input.receiptNumber ? ` Recu electronique : ${input.receiptNumber}.` : '';
+  return transporter.sendMail({
+    from: `"New Financial Services" <${process.env.SMTP_USER}>`,
+    to: input.to,
+    subject: input.subject,
+    text: `${greeting}\n\n${input.title}\n${input.body}.${receiptText}\n\nCordialement,\nNew Financial Services`,
+    html: `
+      <div style="background:#f3f6fb;padding:24px;font-family:Arial,sans-serif;color:#151940">
+        <div style="max-width:620px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #dbe7f2">
+          <div style="background:#0f5da8;padding:22px 28px;color:#fff">
+            <div style="font-size:28px;font-weight:800;letter-spacing:2px">NFS</div>
+            <div style="font-size:11px;opacity:.9">NEW FINANCIAL SERVICES</div>
+          </div>
+          <div style="padding:28px">
+            <p>${escapeHtml(greeting)}</p>
+            <h1 style="font-size:20px;color:#0f5da8;margin:20px 0 10px">${escapeHtml(input.title)}</h1>
+            <p style="line-height:1.65;color:#52647a">${escapeHtml(input.body)}</p>
+            ${input.receiptNumber ? `<div style="margin-top:20px;padding:14px;border-radius:12px;background:#eef6ff;color:#0f5da8;font-weight:700">Recu electronique : ${escapeHtml(input.receiptNumber)}</div>` : ''}
+            <p style="margin-top:26px;font-size:12px;color:#7f8192">Ce message concerne une operation sur votre compte NFS. Ne communiquez jamais vos codes OTP.</p>
+          </div>
+        </div>
+      </div>`,
+    attachments: input.receiptPdf && input.receiptNumber ? [{
+      filename: `${input.receiptNumber}.pdf`,
+      content: input.receiptPdf,
+      contentType: 'application/pdf',
+    }] : undefined,
+  });
+};
+
 export const sendEpargneRequestMail = async (userEmail: string, userFullName: string, montant: number, adminEmails: string[]) => {
   try {
     // Email pour le client

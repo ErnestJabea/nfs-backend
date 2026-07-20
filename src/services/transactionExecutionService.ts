@@ -2,6 +2,8 @@ import prisma from '../utils/prisma';
 import { calculateTransferFee } from '../controllers/adminController';
 import { createFundingCheckout } from './paymentInitiationService';
 import { assertProviderAvailable } from './paymentProviderService';
+import { enqueueUserNotification, maskAccountNumber } from './notificationEventService';
+import { guaranteeAmountEndorsed, guaranteeEntries, isGuaranteeActorAuthorized } from './loanGuaranteeService';
 
 class TransactionError extends Error {
   status: number;
@@ -226,15 +228,22 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
     }
     if (transaction.userId === userId) throw new TransactionError('Vous ne pouvez pas avaliser votre propre credit.', 'SELF_GUARANTEE', 403);
 
-    const [borrower, capacityData] = await Promise.all([
+    const [borrower, loan, capacityData] = await Promise.all([
       prisma.user.findUnique({ where: { id: transaction.userId }, select: { referredById: true } }),
+      prisma.loan.findFirst({ where: { transactionId: transaction.id } }),
       getAvaliseCapacity(prisma, userId),
     ]);
-    if (!borrower || borrower.referredById !== userId) {
+    const operation: any = transaction.operation || {};
+    const avalistes = guaranteeEntries(operation.avalistes, operation.avaliste, loan?.avalistes);
+    if (!borrower || !loan || !['PENDING', 'VALIDATED'].includes(loan.status) || !isGuaranteeActorAuthorized({
+      guarantorId: userId,
+      borrowerId: transaction.userId,
+      borrowerReferrerId: borrower.referredById,
+      avalistes,
+    })) {
       throw new TransactionError('Cette demande ne fait pas partie de votre reseau autorise.', 'GUARANTEE_NOT_ALLOWED', 403);
     }
-    const operation: any = transaction.operation || {};
-    const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - Number(operation.amountEndorsed || 0));
+    const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - guaranteeAmountEndorsed(operation, loan.avalistes));
     if (amount > remainingGuarantee) throw new TransactionError('Le montant depasse la garantie restante.', 'GUARANTEE_AMOUNT_TOO_HIGH', 409);
     if (amount > capacityData.capacity) throw new TransactionError("Capacite d'avalise insuffisante.", 'INSUFFICIENT_GUARANTEE_CAPACITY', 409);
 
@@ -302,7 +311,7 @@ export const executeTransactionIntent = async (intent: any) => {
           operation: { type: 'internal_transfer_out', intentId: intent.id, amount: payload.amount },
         },
       });
-      await tx.transaction.create({
+      const incoming = await tx.transaction.create({
         data: {
           userId: intent.userId,
           purpose: payload.purpose,
@@ -314,6 +323,35 @@ export const executeTransactionIntent = async (intent: any) => {
           currency: target.currency,
           createdBy: 'TransactionAuthorization',
           operation: { type: 'internal_transfer_in', intentId: intent.id, amount: payload.amount },
+        },
+      });
+      await enqueueUserNotification(tx, {
+        eventKey: `financial:${reference}:${intent.userId}`,
+        type: 'INTERNAL_TRANSFER_COMPLETED',
+        aggregateType: 'Transaction',
+        aggregateId: outgoing.id,
+        userId: intent.userId,
+        title: 'Transfert interne confirme',
+        body: `${payload.amount.toLocaleString('fr-FR')} ${source.currency} transferes de ${payload.sourceAccountType} vers ${payload.targetAccountType}.`,
+        mandatoryEmail: true,
+        data: { url: '/history', transactionId: outgoing.id },
+        receipt: {
+          transactionId: outgoing.id,
+          type: 'TRANSFERT INTERNE',
+          title: 'Recu de transfert interne',
+          amount: payload.amount,
+          currency: source.currency || 'XAF',
+          direction: 'NEUTRAL',
+          reference,
+          occurredAt: (outgoing.createdAt || new Date()).toISOString(),
+          paymentMethod: 'Compte NFS',
+          purpose: payload.purpose,
+          source: payload.sourceAccountType,
+          destination: payload.targetAccountType,
+          fees: 0,
+          total: payload.amount,
+          status: 'CONFIRMEE',
+          metadata: { incomingTransactionId: incoming.id },
         },
       });
       return { transactionId: outgoing.id, reference, status: 'SUCCESS' };
@@ -346,7 +384,7 @@ export const executeTransactionIntent = async (intent: any) => {
           operation: { type: 'transfer_out', intentId: intent.id, amount: payload.amount, fee: payload.fee, recipientAccountNumber: payload.recipientAccountNumber },
         },
       });
-      await tx.transaction.create({
+      const incoming = await tx.transaction.create({
         data: {
           userId: payload.recipientUserId,
           purpose: 'Transfert NFS recu',
@@ -360,14 +398,72 @@ export const executeTransactionIntent = async (intent: any) => {
           operation: { type: 'transfer_in', intentId: intent.id, amount: payload.amount },
         },
       });
+      await enqueueUserNotification(tx, {
+        eventKey: `financial:${reference}:sender:${intent.userId}`,
+        type: 'WALLET_TRANSFER_SENT',
+        aggregateType: 'Transaction',
+        aggregateId: outgoing.id,
+        userId: intent.userId,
+        title: 'Transfert envoye',
+        body: `${payload.amount.toLocaleString('fr-FR')} ${source.currency} envoyes vers ${maskAccountNumber(payload.recipientAccountNumber)}.`,
+        mandatoryEmail: true,
+        data: { url: '/history', transactionId: outgoing.id },
+        receipt: {
+          transactionId: outgoing.id,
+          type: 'TRANSFERT SORTANT',
+          title: 'Recu de transfert',
+          amount: payload.amount,
+          currency: source.currency || 'XAF',
+          direction: 'DEBIT',
+          reference,
+          occurredAt: (outgoing.createdAt || new Date()).toISOString(),
+          paymentMethod: 'Compte NFS',
+          purpose: payload.purpose,
+          source: payload.sourceAccountType,
+          destination: maskAccountNumber(payload.recipientAccountNumber),
+          fees: payload.fee,
+          total: totalDebit,
+          status: 'CONFIRMEE',
+        },
+      });
+      await enqueueUserNotification(tx, {
+        eventKey: `financial:${reference}:recipient:${payload.recipientUserId}`,
+        type: 'WALLET_TRANSFER_RECEIVED',
+        aggregateType: 'Transaction',
+        aggregateId: incoming.id,
+        userId: payload.recipientUserId,
+        title: 'Transfert recu',
+        body: `${payload.amount.toLocaleString('fr-FR')} ${target.currency} credites sur votre compte ${payload.targetAccountType}.`,
+        mandatoryEmail: true,
+        data: { url: '/history', transactionId: incoming.id },
+        receipt: {
+          transactionId: incoming.id,
+          type: 'TRANSFERT ENTRANT',
+          title: 'Recu de transfert recu',
+          amount: payload.amount,
+          currency: target.currency || 'XAF',
+          direction: 'CREDIT',
+          reference,
+          occurredAt: (incoming.createdAt || new Date()).toISOString(),
+          paymentMethod: 'Compte NFS',
+          purpose: 'Transfert NFS recu',
+          destination: payload.targetAccountType,
+          fees: 0,
+          total: payload.amount,
+          status: 'CONFIRMEE',
+        },
+      });
       return { transactionId: outgoing.id, reference, status: 'SUCCESS' };
     });
   }
 
   if (intent.type === 'LOAN_REQUEST') {
     return prisma.$transaction(async (tx) => {
-      const pendingLoan = await tx.loan.findFirst({ where: { userId: intent.userId, status: 'PENDING' }, select: { id: true } });
-      if (pendingLoan) throw new TransactionError('Une demande de credit est deja en attente.', 'PENDING_LOAN_EXISTS', 409);
+      const pendingLoan = await tx.loan.findFirst({
+        where: { userId: intent.userId, status: { in: ['PENDING', 'VALIDATED', 'CONFIRMED', 'APPROVED'] } },
+        select: { id: true },
+      });
+      if (pendingLoan) throw new TransactionError('Une demande de credit est deja en cours.', 'ACTIVE_LOAN_EXISTS', 409);
       const reference = `LOAN_${intent.id}`;
       const transaction = await tx.transaction.create({
         data: {
@@ -397,6 +493,16 @@ export const executeTransactionIntent = async (intent: any) => {
           createdBy: 'TransactionAuthorization',
         },
       });
+      await enqueueUserNotification(tx, {
+        eventKey: `loan:${loan.id}:requested:${intent.userId}`,
+        type: 'LOAN_REQUEST_RECEIVED',
+        aggregateType: 'Loan',
+        aggregateId: loan.id,
+        userId: intent.userId,
+        title: 'Demande de credit recue',
+        body: `Votre demande de ${payload.amount.toLocaleString('fr-FR')} XAF est en cours d'etude.`,
+        data: { url: '/loans', loanId: loan.id },
+      });
       return { transactionId: transaction.id, loanId: loan.id, reference, status: 'PENDING' };
     });
   }
@@ -407,8 +513,18 @@ export const executeTransactionIntent = async (intent: any) => {
       if (!transaction || transaction.status !== 'PENDING' || transaction.userId !== payload.borrowerUserId) {
         throw new TransactionError('La demande de credit a change.', 'TRANSACTION_DATA_CHANGED', 409);
       }
-      const borrower = await tx.user.findUnique({ where: { id: payload.borrowerUserId }, select: { referredById: true } });
-      if (!borrower || borrower.referredById !== intent.userId) {
+      const [borrower, loan] = await Promise.all([
+        tx.user.findUnique({ where: { id: payload.borrowerUserId }, select: { referredById: true } }),
+        tx.loan.findFirst({ where: { transactionId: transaction.id } }),
+      ]);
+      const operation: any = transaction.operation || {};
+      const authorizedAvalistes = guaranteeEntries(operation.avalistes, operation.avaliste, loan?.avalistes);
+      if (!borrower || !loan || !['PENDING', 'VALIDATED'].includes(loan.status) || !isGuaranteeActorAuthorized({
+        guarantorId: intent.userId,
+        borrowerId: payload.borrowerUserId,
+        borrowerReferrerId: borrower.referredById,
+        avalistes: authorizedAvalistes,
+      })) {
         throw new TransactionError('Cette demande ne fait plus partie de votre reseau autorise.', 'GUARANTEE_NOT_ALLOWED', 403);
       }
 
@@ -417,8 +533,7 @@ export const executeTransactionIntent = async (intent: any) => {
         throw new TransactionError("Capacite d'avalise insuffisante.", 'INSUFFICIENT_GUARANTEE_CAPACITY', 409);
       }
 
-      const operation: any = transaction.operation || {};
-      const currentAmountEndorsed = Number(operation.amountEndorsed || 0);
+      const currentAmountEndorsed = guaranteeAmountEndorsed(operation, loan.avalistes);
       const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - currentAmountEndorsed);
       if (payload.amount > remainingGuarantee) {
         throw new TransactionError('Le montant depasse la garantie restante.', 'TRANSACTION_DATA_CHANGED', 409);
@@ -436,7 +551,7 @@ export const executeTransactionIntent = async (intent: any) => {
 
       const guarantor = await tx.user.findUnique({ where: { id: intent.userId }, select: { firstName: true, lastName: true } });
       const guarantorName = `${guarantor?.firstName || ''} ${guarantor?.lastName || ''}`.trim() || 'Avaliste NFS';
-      const avalistes = Array.isArray(operation.avalistes) ? [...operation.avalistes] : [];
+      const avalistes = [...authorizedAvalistes];
       const existingIndex = avalistes.findIndex((entry: any) => entry.userId === intent.userId);
       if (existingIndex >= 0) {
         avalistes[existingIndex] = { ...avalistes[existingIndex], amount: Number(avalistes[existingIndex].amount || 0) + payload.amount, date: new Date().toISOString() };
@@ -455,12 +570,28 @@ export const executeTransactionIntent = async (intent: any) => {
         },
       });
 
-      const loan = await tx.loan.findFirst({
-        where: { OR: [{ transactionId: transaction.id }, { userId: payload.borrowerUserId, status: 'PENDING' }] },
+      await tx.loan.update({ where: { id: loan.id }, data: { avalistes, status: newStatus } });
+
+      await enqueueUserNotification(tx, {
+        eventKey: `loan-guarantee:${transaction.id}:${intent.id}:${intent.userId}`,
+        type: 'LOAN_GUARANTEE_REGISTERED',
+        aggregateType: 'Transaction',
+        aggregateId: transaction.id,
+        userId: intent.userId,
+        title: 'Aval enregistre',
+        body: `Votre aval de ${payload.amount.toLocaleString('fr-FR')} XAF a ete enregistre.`,
+        data: { url: '/guarantees', transactionId: transaction.id },
       });
-      if (loan) {
-        await tx.loan.update({ where: { id: loan.id }, data: { avalistes, status: newStatus } });
-      }
+      await enqueueUserNotification(tx, {
+        eventKey: `loan-guarantee:${transaction.id}:${intent.id}:${payload.borrowerUserId}`,
+        type: 'LOAN_GUARANTEE_RECEIVED',
+        aggregateType: 'Transaction',
+        aggregateId: transaction.id,
+        userId: payload.borrowerUserId,
+        title: 'Nouvel aval recu',
+        body: `${payload.amount.toLocaleString('fr-FR')} XAF ont ete ajoutes aux garanties de votre credit.`,
+        data: { url: '/loans', transactionId: transaction.id },
+      });
 
       return {
         transactionId: transaction.id,
@@ -521,6 +652,33 @@ export const executeTransactionIntent = async (intent: any) => {
           currency: source.currency,
           createdBy: 'TransactionAuthorization',
           operation: { type: 'cotisation_payment', intentId: intent.id, groupId: group.id },
+        },
+      });
+      await enqueueUserNotification(tx, {
+        eventKey: `financial:${reference}:${intent.userId}`,
+        type: 'CONTRIBUTION_PAID',
+        aggregateType: 'Transaction',
+        aggregateId: transaction.id,
+        userId: intent.userId,
+        title: 'Cotisation confirmee',
+        body: `Votre cotisation de ${payload.amount.toLocaleString('fr-FR')} ${source.currency} a ete recue.`,
+        mandatoryEmail: true,
+        data: { url: '/history', transactionId: transaction.id },
+        receipt: {
+          transactionId: transaction.id,
+          type: 'COTISATION',
+          title: 'Recu de cotisation',
+          amount: payload.amount,
+          currency: source.currency || 'XAF',
+          direction: 'DEBIT',
+          reference,
+          occurredAt: (transaction.createdAt || new Date()).toISOString(),
+          paymentMethod: 'Compte principal NFS',
+          purpose: `Cotisation ${group.name}`,
+          source: 'PRINCIPAL',
+          fees: 0,
+          total: payload.amount,
+          status: 'CONFIRMEE',
         },
       });
       return { transactionId: transaction.id, reference, status: 'SUCCESS' };

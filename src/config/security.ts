@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 const DEFAULT_DEV_JWT_SECRET = 'dev-only-nfs-secret-change-me-32-chars-min';
 const DEFAULT_DEV_OTP_SECRET = 'dev-only-nfs-otp-secret-change-me-32-chars';
 
@@ -28,6 +30,33 @@ export const getOtpHmacSecret = () => {
   }
 
   return secret;
+};
+
+export const getMfaEncryptionKey = () => {
+  const encodedKey = String(process.env.MFA_ENCRYPTION_KEY || '').trim();
+  if (encodedKey) {
+    const key = Buffer.from(encodedKey, 'base64');
+    if (key.length !== 32) {
+      throw new Error('MFA_ENCRYPTION_KEY must be a base64-encoded 32-byte key.');
+    }
+    return key;
+  }
+
+  if (isProduction) {
+    const pushEnabled = String(process.env.PUSH_NOTIFICATIONS_ENABLED || 'true').toLowerCase() === 'true';
+    if (pushEnabled) {
+      if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+        throw new Error('Web Push requires VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in production.');
+      }
+      const vapidSubject = String(process.env.VAPID_SUBJECT || '');
+      if (!/^mailto:.+@.+\..+$|^https:\/\//i.test(vapidSubject)) {
+        throw new Error('VAPID_SUBJECT must be a mailto: address or an HTTPS URL.');
+      }
+    }
+    throw new Error('MFA_ENCRYPTION_KEY must be configured in production.');
+  }
+
+  return crypto.createHash('sha256').update(getOtpHmacSecret()).digest();
 };
 
 export const getSessionTtlSeconds = () => {
@@ -83,6 +112,7 @@ export const isAllowedCorsOrigin = (origin?: string) => {
 export const validateSecurityConfiguration = () => {
   getJwtSecret();
   getOtpHmacSecret();
+  getMfaEncryptionKey();
 
   if (isProduction) {
     for (const origin of getAllowedOrigins()) {
