@@ -52,6 +52,8 @@ export const getAllowedOrigins = () => {
   const productionOrigins = [
     'https://nfs.ejabbing.com',
     'https://www.nfs.ejabbing.com',
+    'https://app.nfs.ejabbing.com',
+    'https://www.app.nfs.ejabbing.com',
   ];
   const developmentOrigins = [
     'http://localhost:3001',

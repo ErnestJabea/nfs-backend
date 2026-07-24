@@ -83,6 +83,18 @@ const credit = (db: any, accountId: string, amount: number) => db.account.update
   },
 });
 
+const getAvaliseCapacity = async (db: any, userId: string) => {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { accountIds: true } });
+  if (!user) throw new TransactionError('Utilisateur introuvable.', 'USER_NOT_FOUND', 404);
+  const accounts = await db.account.findMany({ where: { id: { in: user.accountIds || [] } } });
+  const balance = (...types: string[]) => Number(accounts.find((account: any) => types.includes(account.type))?.currentBalance || 0);
+  const capacity = Math.max(0,
+    balance('EPARGNE') + balance('DJANGUI_NON_PERCU', 'DJANGUI_NONPERCU')
+    - balance('CREDIT') - balance('PRET') - balance('CREDIT_AVALISE') - balance('PARRAINAGE'),
+  );
+  return { user, accounts, capacity };
+};
+
 export const prepareTransactionPayload = async (userId: string, typeValue: unknown, input: any) => {
   const type = String(typeValue || '').toUpperCase();
   const payload = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
@@ -158,6 +170,34 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
         avalistes,
       },
       summary: `Demande de credit de ${amount.toLocaleString('fr-FR')} XAF sur ${durationMonths} mois`,
+    };
+  }
+
+  if (type === 'AVALISE_CREDIT') {
+    const transactionId = objectIdValue(payload.transactionId, 'Demande de credit');
+    const amount = amountValue(payload.amount);
+    const transaction = await prisma.transaction.findUnique({ where: { id: transactionId } });
+    if (!transaction || transaction.status !== 'PENDING' || !String(transaction.purpose || '').includes('CREDIT') || !transaction.userId) {
+      throw new TransactionError('Demande de credit indisponible.', 'CREDIT_UNAVAILABLE', 404);
+    }
+    if (transaction.userId === userId) throw new TransactionError('Vous ne pouvez pas avaliser votre propre credit.', 'SELF_GUARANTEE', 403);
+
+    const [borrower, capacityData] = await Promise.all([
+      prisma.user.findUnique({ where: { id: transaction.userId }, select: { referredById: true } }),
+      getAvaliseCapacity(prisma, userId),
+    ]);
+    if (!borrower || borrower.referredById !== userId) {
+      throw new TransactionError('Cette demande ne fait pas partie de votre reseau autorise.', 'GUARANTEE_NOT_ALLOWED', 403);
+    }
+    const operation: any = transaction.operation || {};
+    const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - Number(operation.amountEndorsed || 0));
+    if (amount > remainingGuarantee) throw new TransactionError('Le montant depasse la garantie restante.', 'GUARANTEE_AMOUNT_TOO_HIGH', 409);
+    if (amount > capacityData.capacity) throw new TransactionError("Capacite d'avalise insuffisante.", 'INSUFFICIENT_GUARANTEE_CAPACITY', 409);
+
+    return {
+      type,
+      payload: { transactionId, borrowerUserId: transaction.userId, amount },
+      summary: `Avalise de ${amount.toLocaleString('fr-FR')} XAF pour la demande ...${transactionId.slice(-6)}`,
     };
   }
 
@@ -310,6 +350,77 @@ export const executeTransactionIntent = async (intent: any) => {
         },
       });
       return { transactionId: transaction.id, loanId: loan.id, reference, status: 'PENDING' };
+    });
+  }
+
+  if (intent.type === 'AVALISE_CREDIT') {
+    return prisma.$transaction(async (tx) => {
+      const transaction = await tx.transaction.findUnique({ where: { id: payload.transactionId } });
+      if (!transaction || transaction.status !== 'PENDING' || transaction.userId !== payload.borrowerUserId) {
+        throw new TransactionError('La demande de credit a change.', 'TRANSACTION_DATA_CHANGED', 409);
+      }
+      const borrower = await tx.user.findUnique({ where: { id: payload.borrowerUserId }, select: { referredById: true } });
+      if (!borrower || borrower.referredById !== intent.userId) {
+        throw new TransactionError('Cette demande ne fait plus partie de votre reseau autorise.', 'GUARANTEE_NOT_ALLOWED', 403);
+      }
+
+      const capacityData = await getAvaliseCapacity(tx, intent.userId);
+      if (payload.amount > capacityData.capacity) {
+        throw new TransactionError("Capacite d'avalise insuffisante.", 'INSUFFICIENT_GUARANTEE_CAPACITY', 409);
+      }
+
+      const operation: any = transaction.operation || {};
+      const currentAmountEndorsed = Number(operation.amountEndorsed || 0);
+      const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - currentAmountEndorsed);
+      if (payload.amount > remainingGuarantee) {
+        throw new TransactionError('Le montant depasse la garantie restante.', 'TRANSACTION_DATA_CHANGED', 409);
+      }
+
+      let liabilityAccount = capacityData.accounts.find((account: any) => account.type === 'CREDIT_AVALISE');
+      if (liabilityAccount) {
+        liabilityAccount = await credit(tx, liabilityAccount.id, payload.amount);
+      } else {
+        liabilityAccount = await tx.account.create({
+          data: { type: 'CREDIT_AVALISE', currency: 'XAF', currentBalance: payload.amount, availableBalance: payload.amount },
+        });
+        await tx.user.update({ where: { id: intent.userId }, data: { accountIds: { push: liabilityAccount.id } } });
+      }
+
+      const guarantor = await tx.user.findUnique({ where: { id: intent.userId }, select: { firstName: true, lastName: true } });
+      const guarantorName = `${guarantor?.firstName || ''} ${guarantor?.lastName || ''}`.trim() || 'Avaliste NFS';
+      const avalistes = Array.isArray(operation.avalistes) ? [...operation.avalistes] : [];
+      const existingIndex = avalistes.findIndex((entry: any) => entry.userId === intent.userId);
+      if (existingIndex >= 0) {
+        avalistes[existingIndex] = { ...avalistes[existingIndex], amount: Number(avalistes[existingIndex].amount || 0) + payload.amount, date: new Date().toISOString() };
+      } else {
+        avalistes.push({ userId: intent.userId, name: guarantorName, amount: payload.amount, date: new Date().toISOString() });
+      }
+      const amountEndorsed = currentAmountEndorsed + payload.amount;
+      const newStatus = amountEndorsed >= Number(transaction.amount || 0) ? 'VALIDATED' : 'PENDING';
+      const validatedBy = transaction.validatedBy || [];
+      await tx.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          operation: { ...operation, amountEndorsed, avalistes, lastAvaliseIntentId: intent.id },
+          status: newStatus,
+          ...(!validatedBy.includes(intent.userId) ? { validatedBy: { push: intent.userId } } : {}),
+        },
+      });
+
+      const loan = await tx.loan.findFirst({
+        where: { OR: [{ transactionId: transaction.id }, { userId: payload.borrowerUserId, status: 'PENDING' }] },
+      });
+      if (loan) {
+        await tx.loan.update({ where: { id: loan.id }, data: { avalistes, status: newStatus } });
+      }
+
+      return {
+        transactionId: transaction.id,
+        amount: payload.amount,
+        remainingGuarantee: Math.max(0, remainingGuarantee - payload.amount),
+        liabilityAccountId: liabilityAccount.id,
+        status: newStatus,
+      };
     });
   }
 

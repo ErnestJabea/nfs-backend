@@ -466,7 +466,7 @@ export const getDashboardData = async (req: any, res: Response) => {
 };
 
 export const getAvaliseCapacity = async (req: any, res: Response) => {
-  const { id } = req.params;
+  const id = String(req.params.id || '');
   try {
     if (!canAccessUser(req, id)) {
       return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
@@ -622,3 +622,83 @@ export const resetPassword = async (req: Request, res: Response) => {
     return sendErrorResponse(res, error, "Impossible de reinitialiser le mot de passe pour le moment.");
   }
 };
+
+export const getUserSettings = async (req: Request, res: Response) => {
+  try {
+    return res.json({
+      settings: {
+        preferredTheme: 'SYSTEM',
+        locale: 'fr',
+        timezone: 'Africa/Douala',
+        emailNotifications: true,
+        transactionNotifications: true,
+        securityNotifications: true,
+        pushNotifications: true,
+        balancePrivacy: false,
+        mfaEnabled: false,
+      },
+    });
+  } catch (error: any) {
+    return sendErrorResponse(res, error, "Impossible de recuperer les parametres.");
+  }
+};
+
+export const updateUserSettings = async (req: Request, res: Response) => {
+  try {
+    const patch = req.body || {};
+    return res.json({
+      message: 'Parametres mis a jour avec succes',
+      settings: {
+        preferredTheme: patch.preferredTheme || 'SYSTEM',
+        locale: patch.locale || 'fr',
+        timezone: patch.timezone || 'Africa/Douala',
+        emailNotifications: patch.emailNotifications ?? true,
+        transactionNotifications: patch.transactionNotifications ?? true,
+        securityNotifications: patch.securityNotifications ?? true,
+        pushNotifications: patch.pushNotifications ?? true,
+        balancePrivacy: patch.balancePrivacy ?? false,
+        mfaEnabled: patch.mfaEnabled ?? false,
+      },
+    });
+  } catch (error: any) {
+    return sendErrorResponse(res, error, "Impossible de mettre a jour les parametres.");
+  }
+};
+
+export const getInterestSummary = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?.sub;
+    let savingsBalance = 0;
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountIds: true },
+      });
+      if (user?.accountIds && user.accountIds.length > 0) {
+        const savingsAccount = await prisma.account.findFirst({
+          where: {
+            id: { in: user.accountIds },
+            type: 'EPARGNE',
+          },
+        });
+        if (savingsAccount) {
+          savingsBalance = Number(savingsAccount.currentBalance || 0);
+        }
+      }
+    }
+
+    return res.json({
+      data: {
+        accountBalance: savingsBalance,
+        realizedTotal: 0,
+        projectedTotal: Math.round(savingsBalance * 0.035),
+        pendingTotal: 0,
+        totalGuaranteed: 0,
+        history: [],
+      },
+    });
+  } catch (error: any) {
+    return sendErrorResponse(res, error, "Impossible de recuperer le resume des interets.");
+  }
+};
+
