@@ -11,6 +11,7 @@ import walletRoutes from './routes/walletRoutes';
 import adminRoutes from './routes/adminRoutes';
 import transactionIntentRoutes from './routes/transactionIntentRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import paymentRoutes from './routes/paymentRoutes';
 import { setupSwagger } from './utils/swaggerConfig';
 import { initCurrencyJob } from './services/currencyService';
 import { sendErrorResponse } from './utils/errorResponse';
@@ -62,6 +63,7 @@ app.use('/api/wallets', walletRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transaction-intents', transactionIntentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Mobile Compatibility Aliases
 app.use('/public/v1', authRoutes); // Aliasing /public/v1/sign_in to /api/auth/login
