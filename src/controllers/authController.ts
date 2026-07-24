@@ -670,11 +670,20 @@ export const getInterestSummary = async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?.sub;
     let savingsBalance = 0;
     if (userId) {
-      const savingsAccount = await prisma.account.findFirst({
-        where: { userId, type: 'EPARGNE' },
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountIds: true },
       });
-      if (savingsAccount) {
-        savingsBalance = Number(savingsAccount.currentBalance || 0);
+      if (user?.accountIds && user.accountIds.length > 0) {
+        const savingsAccount = await prisma.account.findFirst({
+          where: {
+            id: { in: user.accountIds },
+            type: 'EPARGNE',
+          },
+        });
+        if (savingsAccount) {
+          savingsBalance = Number(savingsAccount.currentBalance || 0);
+        }
       }
     }
 
