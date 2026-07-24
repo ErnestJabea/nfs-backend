@@ -4,6 +4,7 @@ import {
   createStripeCheckoutSession,
   verifyStripeWebhookEvent,
   processStripeCheckoutCompleted,
+  getStripeClient,
 } from '../services/stripeService';
 import prisma from '../utils/prisma';
 
@@ -86,9 +87,26 @@ router.post('/stripe/webhook', express.raw({ type: 'application/json' }), async 
 
 router.get('/:reference', async (req: Request, res: Response) => {
   const refStr = String(req.params.reference || '');
-  const transaction = await prisma.transaction.findFirst({
+  let transaction = await prisma.transaction.findFirst({
     where: { OR: [{ transactionRef: refStr }, { transactionRef: `STRIPE_${refStr}` }] },
   });
+
+  // Si la transaction n'est pas encore en base de données et concerne une session Stripe (ex. cs_test_...), vérifier en direct auprès de l'API Stripe
+  if (!transaction && refStr.startsWith('cs_')) {
+    try {
+      const stripe = getStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(refStr);
+      if (session && session.payment_status === 'paid') {
+        console.log(`[Stripe Sync Check] Verification directe reussie pour la session ${refStr}. Execution du credit...`);
+        await processStripeCheckoutCompleted(session);
+        transaction = await prisma.transaction.findFirst({
+          where: { OR: [{ transactionRef: refStr }, { transactionRef: `STRIPE_${refStr}` }] },
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[Stripe Direct Sync Warn] ${err.message}`);
+    }
+  }
 
   if (transaction) {
     return res.json({
