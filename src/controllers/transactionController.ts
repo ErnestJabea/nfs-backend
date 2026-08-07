@@ -23,14 +23,15 @@ const mapTransaction = (t: any) => {
     userLastName: t.user?.lastName,
     amountEndorsed: operation.amountEndorsed || t.validatedBy?.length || 0,
     avaliste: avaliste,
-    avalistes: avaliste
+    avalistes: avaliste,
+    interestRate: operation.interestRate || t.interestRate || Number(process.env.DEFAULT_LOAN_INTEREST_RATE || 5),
   };
 };
 
 export const getUserTransactions = async (req: any, res: Response) => {
   try {
-    const userId = req.params.userId || req.query.userId || getRequestUserId(req);
-
+    const rawUserId = req.params.userId || req.query.userId || getRequestUserId(req);
+    const userId = Array.isArray(rawUserId) ? String(rawUserId[0]) : (rawUserId ? String(rawUserId) : undefined);
 
     if (!userId) return res.status(400).json({ error: "User ID required" });
     if (!canAccessUser(req, userId)) {
@@ -55,15 +56,31 @@ export const getCreditListPending = async (req: Request, res: Response) => {
     const requesterValue = getRequestUserId(req);
     if (!requesterValue) return res.status(401).json({ error: 'Session invalide.' });
     const requesterId = String(requesterValue);
-    const transactions = await prisma.transaction.findMany({
-      where: { 
-        status: "PENDING",
-        purpose: { contains: "CREDIT" },
-        ...(requestIsAdmin(req) ? {} : { userId: requesterId }),
-      },
+
+    // Récupérer uniquement les demandes de crédit de l'utilisateur connecté
+    const loans = await prisma.loan.findMany({
+      where: { userId: requesterId },
       orderBy: { createdAt: 'desc' }
     });
-    res.json({ data: transactions.map(mapTransaction) });
+
+    const mapped = loans.map((loan: any) => ({
+      id: loan.id,
+      amount: loan.amount,
+      interestRate: loan.interestRate,
+      duration_months: loan.duration,
+      purpose: loan.purpose,
+      status: loan.status,
+      avalistes: loan.avalistes || [],
+      createdAt: loan.createdAt,
+      updatedAt: loan.updatedAt,
+      operation: {
+        interestRate: loan.interestRate,
+        durationMonths: loan.duration,
+        avalistes: loan.avalistes || []
+      }
+    }));
+
+    res.json({ data: mapped });
   } catch (error: any) {
     console.error('getCreditListPending error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
@@ -189,14 +206,15 @@ export const createTransaction = async (req: any, res: Response) => {
     // Mettre à jour/Créer l'objet Loan correspondant
     try {
       const config = await prisma.loanConfig.findFirst({ where: { code: operationCode } });
-      const interestRate = config ? config.rate : 0;
+      const defaultRate = Number(process.env.DEFAULT_LOAN_INTEREST_RATE || 5);
+      const interestRate = (config && typeof config.rate === 'number' && config.rate > 0) ? config.rate : defaultRate;
       const durationMonths = config ? Math.ceil(config.duration / 30) : 6;
       await prisma.loan.create({
         data: {
           userId: finalUserId,
           amount: Number(amount) || 0,
           interestRate: interestRate,
-          totalInterest: (Number(amount) || 0) * (interestRate / 100),
+          totalInterest: Math.round((Number(amount) || 0) * (interestRate / 100) * durationMonths),
           duration: durationMonths,
           purpose: operationCode || "CREDIT",
           status: "PENDING",
@@ -235,13 +253,27 @@ export const createTransaction = async (req: any, res: Response) => {
 
 export const getCreditsPublic = async (req: Request, res: Response) => {
   try {
-    const configs = await prisma.loanConfig.findMany({ orderBy: { code: 'asc' } });
+    let configs = await prisma.loanConfig.findMany({ orderBy: { code: 'asc' } });
+    if (!configs || configs.length === 0) {
+      const defaultConfigs = [
+        { code: 'CLASSIQUE', rate: 3.99, duration: 30 },
+        { code: 'CONS7', rate: 21.99, duration: 210 },
+        { code: 'CONS8', rate: 24.99, duration: 240 },
+        { code: 'CONS9', rate: 27.99, duration: 270 },
+        { code: 'CT1', rate: 3.99, duration: 30 },
+        { code: 'CT2', rate: 7.98, duration: 60 },
+        { code: 'CT3', rate: 11.97, duration: 90 },
+      ];
+      await prisma.loanConfig.createMany({ data: defaultConfigs }).catch(() => undefined);
+      configs = await prisma.loanConfig.findMany({ orderBy: { code: 'asc' } });
+    }
     const mapped = configs.map(c => ({
       id: c.id,
       code: c.code,
-      description: `${c.code} (${c.rate}%, ${c.duration} jours)`,
+      description: `${c.code} (${c.rate}%, ${c.duration}j)`,
       interest: c.rate,
       day: c.duration,
+      durationMonths: Math.max(1, Math.round(c.duration / 30)),
       createdAt: c.createdAt ? c.createdAt.toISOString() : new Date().toISOString(),
       updatedAt: c.updatedAt ? c.updatedAt.toISOString() : new Date().toISOString()
     }));

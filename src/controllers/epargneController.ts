@@ -64,6 +64,13 @@ export const requestEpargne = async (req: Request, res: Response) => {
         }
       });
 
+      // Mettre à jour le solde global NFS
+      await tx.systemBalance.upsert({
+        where: { code: 'NFS_GLOBAL' },
+        create: { code: 'NFS_GLOBAL', totalSavings: amount, availableLiquidity: amount },
+        update: { totalSavings: { increment: amount }, availableLiquidity: { increment: amount }, lastUpdated: new Date() },
+      });
+
       // Créer la transaction SUCCESS
       return await tx.transaction.create({
         data: {
@@ -234,6 +241,13 @@ export const directEpargne = async (req: Request, res: Response) => {
             date: new Date().toISOString()
           }
         }
+      });
+
+      // Mettre à jour le solde global NFS
+      await tx.systemBalance.upsert({
+        where: { code: 'NFS_GLOBAL' },
+        create: { code: 'NFS_GLOBAL', totalSavings: rechargeAmount, availableLiquidity: rechargeAmount },
+        update: { totalSavings: { increment: rechargeAmount }, availableLiquidity: { increment: rechargeAmount }, lastUpdated: new Date() },
       });
 
       // Créer la transaction de crédit (épargne)

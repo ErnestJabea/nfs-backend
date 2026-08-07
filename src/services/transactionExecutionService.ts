@@ -1,5 +1,7 @@
 import prisma from '../utils/prisma';
 import { calculateTransferFee } from '../controllers/adminController';
+import { sendTransactionInvoiceEmail } from '../utils/mailer';
+import { computeAvalise } from '../utils/computeAvalise';
 
 class TransactionError extends Error {
   status: number;
@@ -22,8 +24,8 @@ const accountType = (value: unknown) => {
 
 const amountValue = (value: unknown) => {
   const amount = Number(value);
-  const maximum = Number(process.env.MAX_TRANSACTION_AMOUNT_XAF || 100_000_000);
-  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > maximum) {
+  const maximum = Number(process.env.MAX_TRANSACTION_AMOUNT_XAF || 100_000_000_000);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > maximum) {
     throw new TransactionError('Montant de transaction invalide.', 'INVALID_AMOUNT');
   }
   return amount;
@@ -154,22 +156,100 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
 
   if (type === 'LOAN_REQUEST') {
     const amount = amountValue(payload.amount);
-    const durationMonths = Number(payload.durationMonths);
+    const creditTypeCode = String(payload.creditTypeCode || payload.creditType || payload.code || '').toUpperCase();
+    let rate = Number(process.env.DEFAULT_LOAN_INTEREST_RATE || 5);
+    let durationMonths = Number(payload.durationMonths || 6);
+
+    if (creditTypeCode) {
+      const config = await prisma.loanConfig.findFirst({ where: { code: creditTypeCode } });
+      if (config) {
+        rate = Number(config.rate !== undefined ? config.rate : rate);
+        durationMonths = Math.max(1, Math.ceil(Number(config.duration || 180) / 30));
+      }
+    }
+
     if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 60) {
       throw new TransactionError('Duree de credit invalide.', 'INVALID_DURATION');
     }
+
+    // 1. Calcul de la Capacité d'Avalise C_aval
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { accountIds: true } });
+    const userAccounts = await prisma.account.findMany({ where: { id: { in: user?.accountIds || [] } } });
+    
+    // Condition 0 : Le montant sollicité S ne peut pas dépasser le Solde NFS disponible (Somme des comptes EPARGNE de TOUS les membres)
+    const epargneAggregate = await prisma.account.aggregate({
+      where: { type: 'EPARGNE' },
+      _sum: { currentBalance: true }
+    });
+    const soldeNfsGlobal = Number(epargneAggregate._sum.currentBalance || 0);
+
+    if (soldeNfsGlobal > 0 && amount > soldeNfsGlobal) {
+      throw new TransactionError(`Le montant sollicité ne peut pas dépasser le solde NFS disponible (${Math.floor(soldeNfsGlobal).toLocaleString('fr-FR')} FCFA).`, 'EXCEEDS_NFS_BALANCE', 400);
+    }
+
+    const computedAccounts = computeAvalise(userAccounts);
+    const avaliseAcc = computedAccounts.find((a: any) => a.type === 'AVALISE');
+    const cAvalAtRequest = Math.max(0, Number(avaliseAcc?.currentBalance || 0));
+
+    // 2. Application de la Matrice d'Éligibilité des 3 Cas
+    // CAS 3: C_aval < 1/3 * S => Rejet immédiat
+    if (cAvalAtRequest < (1 / 3) * amount) {
+      throw new TransactionError("Vous n'êtes pas éligible pour la demande de crédit", 'NOT_ELIGIBLE', 400);
+    }
+
+    const requestedAutoAvalise = Boolean(payload.isAutoAvalise);
+    let isAutoAvalise = false;
+    let amountToGuarantee = amount;
+
+    // CAS 1: C_aval >= S => Option Auto-avalise 100% avec taux bonifié
+    if (cAvalAtRequest >= amount) {
+      if (requestedAutoAvalise) {
+        isAutoAvalise = true;
+        amountToGuarantee = 0;
+        rate = Math.max(0, Number((rate - 0.5).toFixed(2))); // Taux bonifié
+      } else {
+        amountToGuarantee = Math.max(0, amount - cAvalAtRequest);
+      }
+    } else {
+      // CAS 2: 1/3 * S <= C_aval < S => Garanties requises = S - C_aval
+      isAutoAvalise = false;
+      amountToGuarantee = Math.max(0, amount - cAvalAtRequest);
+    }
+
+    // 3. Calcul de l'annuité constante M et intérêt total
+    let monthlyInstallment = 0;
+    let totalInterest = 0;
+    if (rate === 0) {
+      monthlyInstallment = Math.ceil(amount / durationMonths);
+      totalInterest = 0;
+    } else {
+      totalInterest = Math.round(amount * (rate / 100) * durationMonths);
+      monthlyInstallment = Math.ceil((amount + totalInterest) / durationMonths);
+    }
+
     const avalistes = Array.isArray(payload.avalistes) ? payload.avalistes.slice(0, 5) : [];
-    const pendingLoan = await prisma.loan.findFirst({ where: { userId, status: 'PENDING' }, select: { id: true } });
+    const pendingLoan = await prisma.loan.findFirst({
+      where: { userId, status: { in: ['PENDING', 'PENDING_COMEX', 'PENDING_AVALISTS'] } },
+      select: { id: true }
+    });
     if (pendingLoan) throw new TransactionError('Une demande de credit est deja en attente.', 'PENDING_LOAN_EXISTS', 409);
+
     return {
       type,
       payload: {
         amount,
+        creditTypeCode,
+        interestRate: rate,
         durationMonths,
-        purpose: String(payload.purpose || 'Credit NFS').trim().slice(0, 200),
+        cAvalAtRequest,
+        isAutoAvalise,
+        amountToGuarantee,
+        monthlyInstallment,
+        totalInterest,
+        purpose: String(payload.purpose || `Credit ${creditTypeCode || 'NFS'}`).trim().slice(0, 200),
         avalistes,
       },
-      summary: `Demande de credit de ${amount.toLocaleString('fr-FR')} XAF sur ${durationMonths} mois`,
+      summary: `Demande de credit ${creditTypeCode || ''} de ${amount.toLocaleString('fr-FR')} XAF sur ${durationMonths} mois (${rate}%)`,
     };
   }
 
@@ -204,26 +284,59 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
   if (type === 'COTISATION_JOIN' || type === 'COTISATION_PAYMENT') {
     const groupId = objectIdValue(payload.groupId, 'Groupe de cotisation');
     const group = await prisma.cotisationGroup.findUnique({ where: { id: groupId } });
-    if (!group || !['ACTIF', 'ACTIVE'].includes(String(group.status).toUpperCase())) {
-      throw new TransactionError('Groupe de cotisation indisponible.', 'GROUP_UNAVAILABLE', 404);
+    if (!group) {
+      throw new TransactionError('Groupe de cotisation introuvable.', 'GROUP_UNAVAILABLE', 404);
     }
+    const rawMemberIds = Array.isArray(group.memberIds) ? group.memberIds : [];
+    const memberIds = Array.from(new Set(rawMemberIds.map(id => String(id))));
+    const max = group.maxParticipants || (group as any).limit_participant || 10;
+
     if (type === 'COTISATION_JOIN') {
-      if (group.memberIds.includes(userId)) throw new TransactionError('Vous etes deja membre de ce groupe.', 'ALREADY_MEMBER', 409);
-      if (group.maxParticipants && (group.nb_participant || group.memberIds.length) >= group.maxParticipants) {
+      if (memberIds.includes(userId)) throw new TransactionError('Vous etes deja membre de ce groupe.', 'ALREADY_MEMBER', 409);
+      if (memberIds.length >= max) {
         throw new TransactionError('Ce groupe est complet.', 'GROUP_FULL', 409);
       }
       return {
         type,
-        payload: { groupId, expectedMemberCount: group.nb_participant || group.memberIds.length },
+        payload: { groupId, expectedMemberCount: memberIds.length },
         summary: `Adhesion a la cotisation ${String(group.name).slice(0, 80)}`,
       };
     }
-    if (!group.memberIds.includes(userId)) throw new TransactionError('Vous ne faites pas partie de ce groupe.', 'NOT_A_MEMBER', 403);
+    if (!memberIds.includes(userId)) throw new TransactionError('Vous ne faites pas partie de ce groupe.', 'NOT_A_MEMBER', 403);
     const amount = amountValue(group.amount);
     return {
       type,
       payload: { groupId, amount },
       summary: `Cotisation ${String(group.name).slice(0, 80)} : ${amount.toLocaleString('fr-FR')} XAF`,
+    };
+  }
+
+  if (type === 'ACCOUNT_FUNDING' || type === 'ACCOUNT_FUNDING_STRIPE') {
+    const amount = amountValue(payload.amount);
+    const targetAccountType = accountType(payload.targetAccountType || 'PRINCIPAL');
+    const label = targetAccountType === 'EPARGNE' ? 'Solde Épargne' : 'Wallet NFS';
+    return {
+      type,
+      payload: {
+        amount,
+        targetAccountType,
+        provider: String(payload.provider || 'STRIPE'),
+      },
+      summary: `Approvisionnement ${label} de ${amount.toLocaleString('fr-FR')} XAF via Stripe`,
+    };
+  }
+
+  if (type === 'COTISATION_PAYMENT_STRIPE') {
+    const groupId = objectIdValue(payload.groupId, 'Groupe de cotisation');
+    const group = await prisma.cotisationGroup.findUnique({ where: { id: groupId } });
+    if (!group || !['ACTIF', 'ACTIVE'].includes(String(group.status).toUpperCase())) {
+      throw new TransactionError('Groupe de cotisation indisponible.', 'GROUP_UNAVAILABLE', 404);
+    }
+    const amount = amountValue(payload.amount || group.amount);
+    return {
+      type,
+      payload: { groupId, amount, provider: 'STRIPE' },
+      summary: `Cotisation ${String(group.name).slice(0, 80)} par Stripe : ${amount.toLocaleString('fr-FR')} XAF`,
     };
   }
 
@@ -239,6 +352,14 @@ export const executeTransactionIntent = async (intent: any) => {
       const target = await getOwnedAccount(tx, intent.userId, payload.targetAccountType);
       await debit(tx, source.id, payload.amount);
       await credit(tx, target.id, payload.amount);
+      if (payload.targetAccountType === 'EPARGNE') {
+        await tx.systemBalance.upsert({
+          where: { code: 'NFS_GLOBAL' },
+          create: { code: 'NFS_GLOBAL', totalSavings: payload.amount, availableLiquidity: payload.amount },
+          update: { totalSavings: { increment: payload.amount }, availableLiquidity: { increment: payload.amount }, lastUpdated: new Date() },
+        });
+      }
+
       const reference = `TI_${intent.id}`;
       const outgoing = await tx.transaction.create({
         data: {
@@ -268,7 +389,27 @@ export const executeTransactionIntent = async (intent: any) => {
           operation: { type: 'internal_transfer_in', intentId: intent.id, amount: payload.amount },
         },
       });
-      return { transactionId: outgoing.id, reference, status: 'SUCCESS' };
+
+      const txResult = { transactionId: outgoing.id, reference, status: 'SUCCESS' };
+
+      prisma.user.findUnique({ where: { id: intent.userId }, select: { email: true, firstName: true, lastName: true } })
+        .then((u) => {
+          if (u?.email) {
+            const title = payload.targetAccountType === 'EPARGNE' ? 'Approvisionnement Solde Épargne' : 'Transfert Interne NFS';
+            sendTransactionInvoiceEmail({
+              userEmail: u.email,
+              userName: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+              transactionRef: reference,
+              title,
+              amount: payload.amount,
+              currency: source.currency || 'XAF',
+              paymentMethod: 'Solde Wallet NFS',
+            }).catch((err) => console.error('[Invoice Email Send Error]:', err));
+          }
+        })
+        .catch((err) => console.error('[Invoice User Fetch Error]:', err));
+
+      return txResult;
     });
   }
 
@@ -318,23 +459,39 @@ export const executeTransactionIntent = async (intent: any) => {
 
   if (intent.type === 'LOAN_REQUEST') {
     return prisma.$transaction(async (tx) => {
-      const pendingLoan = await tx.loan.findFirst({ where: { userId: intent.userId, status: 'PENDING' }, select: { id: true } });
+      const pendingLoan = await tx.loan.findFirst({
+        where: { userId: intent.userId, status: { in: ['PENDING', 'PENDING_COMEX', 'PENDING_AVALISTS'] } },
+        select: { id: true }
+      });
       if (pendingLoan) throw new TransactionError('Une demande de credit est deja en attente.', 'PENDING_LOAN_EXISTS', 409);
       const reference = `LOAN_${intent.id}`;
+      const initialStatus = 'PENDING_COMEX';
+
+      const borrowerPurpose = String(payload.purpose || `Demande de crédit ${payload.creditTypeCode || 'NFS'}`).replace(/^(CREDIT|LOAN)\s*[-:]\s*/i, '').trim();
+
       const transaction = await tx.transaction.create({
         data: {
           userId: intent.userId,
-          purpose: `CREDIT - ${payload.purpose}`,
+          purpose: borrowerPurpose,
           amount: payload.amount,
-          status: 'PENDING',
+          status: initialStatus,
           transactionRef: reference,
           targetAccountType: 'CREDIT',
           currency: 'XAF',
           createdBy: 'TransactionAuthorization',
-          operation: { type: 'loan_request', intentId: intent.id, durationMonths: payload.durationMonths, avalistes: payload.avalistes },
+          operation: {
+            type: 'loan_request',
+            intentId: intent.id,
+            durationMonths: payload.durationMonths,
+            creditTypeCode: payload.creditTypeCode,
+            cAvalAtRequest: payload.cAvalAtRequest,
+            isAutoAvalise: payload.isAutoAvalise,
+            amountToGuarantee: payload.amountToGuarantee,
+            avalistes: payload.avalistes
+          },
         },
       });
-      const rate = Number(process.env.DEFAULT_LOAN_INTEREST_RATE || 5);
+
       const loan = await tx.loan.create({
         data: {
           userId: intent.userId,
@@ -342,14 +499,17 @@ export const executeTransactionIntent = async (intent: any) => {
           amount: payload.amount,
           duration: payload.durationMonths,
           purpose: payload.purpose,
-          interestRate: rate,
-          totalInterest: payload.amount * rate / 100,
-          status: 'PENDING',
+          interestRate: payload.interestRate || 5,
+          totalInterest: payload.totalInterest || 0,
+          cAvalAtRequest: payload.cAvalAtRequest,
+          isAutoAvalise: payload.isAutoAvalise || false,
+          amountToGuarantee: payload.amountToGuarantee,
+          status: initialStatus,
           avalistes: payload.avalistes,
           createdBy: 'TransactionAuthorization',
         },
       });
-      return { transactionId: transaction.id, loanId: loan.id, reference, status: 'PENDING' };
+      return { transactionId: transaction.id, loanId: loan.id, reference, status: initialStatus };
     });
   }
 
@@ -427,13 +587,27 @@ export const executeTransactionIntent = async (intent: any) => {
   if (intent.type === 'COTISATION_JOIN') {
     return prisma.$transaction(async (tx) => {
       const group = await tx.cotisationGroup.findUnique({ where: { id: payload.groupId } });
-      if (!group || group.memberIds.includes(intent.userId)) throw new TransactionError('Adhesion deja traitee ou groupe introuvable.', 'GROUP_STATE_CHANGED', 409);
-      if (group.maxParticipants && (group.nb_participant || group.memberIds.length) >= group.maxParticipants) {
+      if (!group) throw new TransactionError('Groupe introuvable.', 'GROUP_UNAVAILABLE', 404);
+
+      const rawMemberIds = Array.isArray(group.memberIds) ? group.memberIds : [];
+      const memberIds = Array.from(new Set(rawMemberIds.map(id => String(id))));
+      const max = group.maxParticipants || (group as any).limit_participant || 10;
+
+      if (memberIds.includes(intent.userId)) throw new TransactionError('Adhesion deja traitee ou vous etes deja membre.', 'GROUP_STATE_CHANGED', 409);
+      if (memberIds.length >= max) {
         throw new TransactionError('Ce groupe est complet.', 'GROUP_FULL', 409);
       }
+
+      const updatedMemberIds = [...memberIds, intent.userId];
+      const newStatus = updatedMemberIds.length >= max ? 'ACTIF' : 'EN_ATTENTE';
+
       await tx.cotisationGroup.update({
         where: { id: group.id },
-        data: { memberIds: { push: intent.userId }, nb_participant: { increment: 1 } },
+        data: {
+          memberIds: updatedMemberIds,
+          nb_participant: updatedMemberIds.length,
+          status: newStatus,
+        },
       });
       return { groupId: group.id, status: 'SUCCESS' };
     });
@@ -477,6 +651,24 @@ export const executeTransactionIntent = async (intent: any) => {
       });
       return { transactionId: transaction.id, reference, status: 'SUCCESS' };
     });
+  }
+
+  if (intent.type === 'ACCOUNT_FUNDING' || intent.type === 'ACCOUNT_FUNDING_STRIPE') {
+    return {
+      status: 'OTP_CONFIRMED',
+      authorized: true,
+      amount: payload.amount,
+      targetAccountType: payload.targetAccountType,
+    };
+  }
+
+  if (intent.type === 'COTISATION_PAYMENT_STRIPE') {
+    return {
+      status: 'OTP_CONFIRMED',
+      authorized: true,
+      amount: payload.amount,
+      groupId: payload.groupId,
+    };
   }
 
   throw new TransactionError('Type de transaction non pris en charge.', 'UNSUPPORTED_TRANSACTION_TYPE');

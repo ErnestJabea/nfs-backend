@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import prisma from '../utils/prisma';
+import { sendTransactionInvoiceEmail } from '../utils/mailer';
 
 const getStripeSecretKey = () => process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder_key_for_development';
 
@@ -44,9 +45,8 @@ export const createStripeCheckoutSession = async (options: CreateStripeSessionOp
 
   if (rawCurrency === 'XAF' || rawCurrency === 'XOF') {
     stripeCurrency = 'eur';
-    // Taux officiel d'équivalence : 1 EUR = 655.957 XAF
     const amountInEur = amount / 655.957;
-    unitAmountCents = Math.max(50, Math.round(amountInEur * 100)); // Minimum Stripe Checkout (~0,50 EUR)
+    unitAmountCents = Math.max(50, Math.round(amountInEur * 100));
     description += ` (≈ ${(unitAmountCents / 100).toFixed(2)} €)`;
   } else if (rawCurrency === 'EUR') {
     stripeCurrency = 'eur';
@@ -64,6 +64,9 @@ export const createStripeCheckoutSession = async (options: CreateStripeSessionOp
       payment_method_types: ['card'],
       mode: 'payment',
       customer_email: options.userEmail || undefined,
+      invoice_creation: {
+        enabled: true,
+      },
       line_items: [
         {
           price_data: {
@@ -107,7 +110,6 @@ export const createStripeCheckoutSession = async (options: CreateStripeSessionOp
       
       const mockSessionId = `cs_test_${Math.random().toString(36).substring(2, 10)}_${Date.now()}`;
       
-      // Auto-exécuter le crédit en base de données pour le mode simulation
       await processStripeCheckoutCompleted({
         id: mockSessionId,
         amount_total: options.amount,
@@ -165,16 +167,32 @@ export const processStripeCheckoutCompleted = async (session: Stripe.Checkout.Se
     return { processed: true, idempotency: true, transactionRef };
   }
 
+  let result: any;
+
   if (type === 'ACCOUNT_FUNDING') {
-    return prisma.$transaction(async (tx) => {
+    result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, select: { accountIds: true } });
       if (!user) throw new Error(`Utilisateur ${userId} introuvable pour le crédit Stripe.`);
 
-      const account = await tx.account.findFirst({
+      let account = await tx.account.findFirst({
         where: { id: { in: user.accountIds || [] }, type: targetAccountType === 'EPARGNE' ? 'EPARGNE' : 'PRINCIPAL' },
       });
 
-      if (!account) throw new Error(`Compte ${targetAccountType} introuvable pour l'utilisateur ${userId}.`);
+      if (!account) {
+        console.log(`[Stripe Webhook] Création automatique du compte ${targetAccountType} pour l'utilisateur ${userId}...`);
+        account = await tx.account.create({
+          data: {
+            type: targetAccountType === 'EPARGNE' ? 'EPARGNE' : 'PRINCIPAL',
+            currency: 'XAF',
+            currentBalance: 0,
+            availableBalance: 0,
+          },
+        });
+        await tx.user.update({
+          where: { id: userId },
+          data: { accountIds: { push: account.id } },
+        });
+      }
 
       await tx.account.update({
         where: { id: account.id },
@@ -207,12 +225,10 @@ export const processStripeCheckoutCompleted = async (session: Stripe.Checkout.Se
       console.log(`[Stripe Webhook] Compte ${targetAccountType} de l'utilisateur ${userId} crédité de ${amount} XAF via Stripe.`);
       return { processed: true, transactionId: createdTx.id, transactionRef };
     });
-  }
-
-  if (type === 'COTISATION_PAYMENT') {
+  } else if (type === 'COTISATION_PAYMENT') {
     if (!groupId) throw new Error('ID du groupe de cotisation manquant dans les métadonnées Stripe.');
 
-    return prisma.$transaction(async (tx) => {
+    result = await prisma.$transaction(async (tx) => {
       const group = await tx.cotisationGroup.findUnique({ where: { id: groupId } });
       if (!group) throw new Error(`Groupe de cotisation ${groupId} introuvable.`);
 
@@ -251,7 +267,27 @@ export const processStripeCheckoutCompleted = async (session: Stripe.Checkout.Se
       console.log(`[Stripe Webhook] Cotisation de ${amount} XAF enregistrée pour l'utilisateur ${userId} dans le groupe ${group.name}.`);
       return { processed: true, transactionId: createdTx.id, transactionRef };
     });
+  } else {
+    throw new Error(`Type de paiement Stripe inconnu : ${type}`);
   }
 
-  throw new Error(`Type de paiement Stripe inconnu : ${type}`);
+  // Envoi asynchrone de l'email de confirmation et de la facture NFS App au client
+  prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true, lastName: true } })
+    .then((u) => {
+      if (u?.email) {
+        sendTransactionInvoiceEmail({
+          userEmail: u.email,
+          userName: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+          transactionRef,
+          title: type === 'COTISATION_PAYMENT'
+            ? 'Cotisation Tontine NFS'
+            : (targetAccountType === 'EPARGNE' ? 'Approvisionnement Solde Épargne' : 'Approvisionnement Wallet NFS'),
+          amount,
+          currency: 'XAF',
+        }).catch((err) => console.error('[Invoice Email Send Error]:', err));
+      }
+    })
+    .catch((err) => console.error('[Invoice User Fetch Error]:', err));
+
+  return result;
 };

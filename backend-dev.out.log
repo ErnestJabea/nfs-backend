@@ -1,0 +1,232 @@
+
+> backend@1.0.0 dev
+> nodemon src/index.ts
+
+[33m[nodemon] 3.1.14[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: ts,json[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/health [32m200[0m 6.181 ms - 54[0m
+[0mPOST /api/auth/admin/login [33m401[0m 4530.465 ms - 50[0m
+[0mPOST /api/auth/admin/login [32m200[0m 2733.027 ms - 271[0m
+[0mGET /api/admin/currencies [32m200[0m 4633.629 ms - 10357[0m
+[0mGET /api/admin/currencies [36m304[0m 303.131 ms - -[0m
+[0mGET /api/admin/stats [32m200[0m 9609.105 ms - 1984233[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 12382.966 ms - 20454479[0m
+[0mGET /api/admin/stats [36m304[0m 7329.646 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 9013.556 ms - -[0m
+[0mPOST /api/auth/admin/login [33m401[0m 1929.417 ms - 50[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/health [32m200[0m 6.257 ms - 54[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [33m401[0m 1.745 ms - 25[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [33m401[0m 7.067 ms - 25[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [32m200[0m 8359.408 ms - 7367[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [32m200[0m 489.138 ms - 7367[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 1435.021 ms - 3759[0m
+[0mGET /api/admin/currencies [36m304[0m 1428.063 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 2636.575 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 4319.940 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 14073.707 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 6144.846 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [32m200[0m 536.835 ms - 7367[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [36m304[0m 897.173 ms - -[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [33m401[0m 31.695 ms - 80[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [33m401[0m 2.727 ms - 80[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mPOST /api/auth/admin/login [32m200[0m 6388.405 ms - 343[0m
+[0mGET /api/admin/me/permissions [32m200[0m 359.008 ms - 45[0m
+[0mGET /api/admin/stats [33m403[0m 248.288 ms - 119[0m
+[0mGET /api/admin/stats [33m403[0m 274.033 ms - 119[0m
+[0mGET /api/admin/transactions?limit=5 [33m403[0m 657.027 ms - 152[0m
+[0mGET /api/admin/currencies [33m403[0m 697.925 ms - 120[0m
+[0mGET /api/admin/transactions?limit=5 [33m403[0m 246.386 ms - 152[0m
+[0mGET /api/admin/currencies [33m403[0m 248.003 ms - 120[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/admin/currencies [32m200[0m 3455.080 ms - 10357[0m
+[0mGET /api/admin/currencies [36m304[0m 838.891 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [0m-[0m - ms - -[0m
+[0mGET /api/admin/stats [0m-[0m - ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 453.488 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 541.357 ms - 3759[0m
+[0mGET /api/admin/currencies [36m304[0m 412.165 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 607.179 ms - -[0m
+[0mGET /api/admin/stats [32m200[0m 2464.995 ms - 1984252[0m
+[0mGET /api/admin/stats [0m-[0m - ms - -[0m
+[0mPOST /api/auth/admin/login [33m401[0m 194.046 ms - 50[0m
+[0mPOST /api/auth/admin/login [33m401[0m 2348.354 ms - 50[0m
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m

@@ -12,7 +12,25 @@ const OTP_RESEND_DELAY_MS = 45 * 1000;
 const OTP_MAX_RESENDS = 3;
 
 const createOtp = () => crypto.randomInt(10_000_000, 100_000_000).toString();
-const payloadDigest = (payload: unknown) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+const canonicalize = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') {
+    if (typeof obj === 'number') return Number(obj.toFixed(2));
+    return obj;
+  }
+  if (Array.isArray(obj)) return obj.map(canonicalize);
+  const sorted: any = {};
+  for (const key of Object.keys(obj).sort()) {
+    if (obj[key] !== undefined) {
+      sorted[key] = canonicalize(obj[key]);
+    }
+  }
+  return sorted;
+};
+const payloadDigest = (payload: unknown) => {
+  const normalized = JSON.parse(JSON.stringify(canonicalize(payload)));
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+};
 const otpDigest = (intentId: string, userId: string, payloadHash: string, otp: string) => crypto
   .createHmac('sha256', getOtpHmacSecret())
   .update(`${intentId}:${userId}:${payloadHash}:${otp}`)
@@ -101,7 +119,9 @@ export const confirmTransactionIntent = async (req: any, res: Response) => {
   try {
     const intent = await getOwnedIntent(String(req.params.id || ''), req.user.userId);
     if (!intent) return res.status(404).json({ error: 'Autorisation introuvable.', code: 'INTENT_NOT_FOUND' });
-    if (intent.status === 'COMPLETED') return res.json(publicIntent(intent, { replayed: true }));
+    if (['COMPLETED', 'PROCESSING', 'OTP_CONFIRMED'].includes(intent.status)) {
+      return res.json(publicIntent(intent, { replayed: true }));
+    }
     if (intent.status !== 'OTP_PENDING') {
       return res.status(409).json({ error: 'Cette autorisation ne peut plus etre confirmee.', code: 'INTENT_NOT_PENDING', status: intent.status });
     }

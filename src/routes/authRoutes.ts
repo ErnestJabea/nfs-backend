@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, adminLogin, getProfile, getClientCurrencies, getSession, logout, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData, getUserById, getUserSettings, updateUserSettings, getInterestSummary } from '../controllers/authController';
+import { register, login, adminLogin, getProfile, updateProfile, getCountries, getClientCurrencies, getSession, logout, requestPasswordReset, resetPassword, activateAccount, updateUserInfo, getAvaliseCapacity, getDashboardData, getUserById, getUserSettings, updateUserSettings, getInterestSummary } from '../controllers/authController';
 
 import { getCotisations, getProviderByCode, getPrincipalNfs, getCotisationUsers, assignCotisation } from '../controllers/compatibilityController';
 import { getUserTransactions, getCreditListPending, getEligibleCreditsForAvalise, getCumulCredit, generateInvoice, createTransaction, getCreditsPublic, getCreditById, getCreditByCode } from '../controllers/transactionController';
@@ -30,6 +30,9 @@ router.post('/admin/login', authRateLimiter, adminLogin);
 router.get('/session', authMiddleware, getSession);
 router.post('/logout', authMiddleware, logout);
 router.get('/profile', authMiddleware, getProfile);
+router.patch('/profile', authMiddleware, updateProfile);
+router.put('/profile', authMiddleware, updateProfile);
+router.get('/countries', getCountries);
 router.get('/currencies', authMiddleware, getClientCurrencies);
 router.get('/settings', authMiddleware, getUserSettings);
 router.patch('/settings', authMiddleware, updateUserSettings);

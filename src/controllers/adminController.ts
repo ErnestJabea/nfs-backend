@@ -7,6 +7,8 @@ import { normalizePermissions, permissionCatalog } from '../security/permissions
 import { getEffectivePermissions } from '../middlewares/permissionMiddleware';
 import { issuePasswordResetCode } from '../services/passwordResetService';
 import { sendResetCode } from '../services/mailService';
+import bcrypt from 'bcryptjs';
+import { generateTotpSecret, generateTotpUri, verifyTotpCode } from '../utils/totp';
 import { sendErrorResponse } from '../utils/errorResponse';
 
 const parseRoles = (body: any): string[] | undefined => {
@@ -917,6 +919,119 @@ export const getCotisations = async (req: Request, res: Response) => {
   }
 };
 
+
+export const getAdminProfile = async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.sub;
+    if (!userId) return res.status(401).json({ error: 'Non authentifié' });
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    const { password, ...safeUser } = user as any;
+    res.json({ data: safeUser });
+  } catch (error: any) {
+    console.error('getAdminProfile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const changeAdminPassword = async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.sub || req.user?.id;
+    const { currentPassword, newPassword } = req.body;
+    if (!userId) return res.status(401).json({ error: 'Non authentifié' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Le mot de passe actuel et le nouveau mot de passe sont requis.' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+
+    const isValid = await bcrypt.compare(String(currentPassword), user.password);
+    if (!isValid) {
+      return res.status(400).json({ error: 'Le mot de passe actuel est incorrect.' });
+    }
+
+    const hashed = await bcrypt.hash(String(newPassword), 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashed }
+    });
+
+    res.json({ message: 'Mot de passe mis à jour avec succès.' });
+  } catch (error: any) {
+    console.error('changeAdminPassword error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const setupAdmin2FA = async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.sub || req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Non authentifié' });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+
+    let secret = (user as any).twoFactorSecret;
+    if (!secret) {
+      secret = generateTotpSecret(20);
+      await prisma.user.update({
+        where: { id: userId },
+        data: { twoFactorSecret: secret } as any
+      });
+    }
+
+    const uri = generateTotpUri(secret, user.email || user.phone || 'Admin');
+    res.json({
+      secret,
+      uri,
+      twoFactorEnabled: Boolean((user as any).twoFactorEnabled)
+    });
+  } catch (error: any) {
+    console.error('setupAdmin2FA error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const verifyAdmin2FA = async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.sub || req.user?.id;
+    const { code, enable } = req.body;
+    if (!userId) return res.status(401).json({ error: 'Non authentifié' });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+
+    const secret = (user as any).twoFactorSecret;
+    if (!secret) {
+      return res.status(400).json({ error: 'Aucun secret 2FA configuré. Veuillez relancer la configuration.' });
+    }
+
+    const isValid = verifyTotpCode(secret, String(code || ''));
+    if (!isValid) {
+      return res.status(400).json({ error: 'Code 2FA invalide ou expiré.' });
+    }
+
+    const shouldEnable = enable !== undefined ? Boolean(enable) : true;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: shouldEnable } as any
+    });
+
+    res.json({
+      message: shouldEnable ? 'Authentification 2FA activée avec succès !' : 'Authentification 2FA désactivée.',
+      twoFactorEnabled: shouldEnable
+    });
+  } catch (error: any) {
+    console.error('verifyAdmin2FA error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const getCotisation = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1270,6 +1385,13 @@ export const updateLoanStatus = async (req: any, res: Response) => {
         data: { status: 'SUCCESS', validatedBy: [adminId || adminName] }
       });
       if (loan.transactionId && updatedTransactions.count !== 1) throw new Error('Transaction de credit associee introuvable.');
+
+      // 3. Débiter la liquidité globale NFS du montant du crédit accordé au bénéficiaire
+      await dbTx.systemBalance.upsert({
+        where: { code: 'NFS_GLOBAL' },
+        create: { code: 'NFS_GLOBAL', totalLoans: loan.amount, availableLiquidity: -loan.amount },
+        update: { totalLoans: { increment: loan.amount }, availableLiquidity: { decrement: loan.amount }, lastUpdated: new Date() },
+      });
     }
 
     if (normalizedStatus === 'APPROVED' && loan.avalistes && Array.isArray(loan.avalistes)) {
@@ -1486,7 +1608,7 @@ export const createLoan = async (req: any, res: Response) => {
         amount: loanAmount,
         duration: loanDuration,
         interestRate: loanRate,
-        totalInterest: loanAmount * (loanRate / 100),
+        totalInterest: Math.round(loanAmount * (loanRate / 100) * Math.max(1, Math.ceil(loanDuration / 30))),
         purpose,
         status: 'PENDING',
         avalistes: validatedAvalistes,

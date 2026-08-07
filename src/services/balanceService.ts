@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma';
 
 export class BalanceService {
   /**
@@ -9,7 +7,7 @@ export class BalanceService {
    */
   static async updateNfsSavings(amount: number) {
     try {
-      console.log(`[BalanceService] Mise à jour du solde global: ${amount} XAF`);
+      console.log(`[BalanceService] Mise à jour de l'épargne globale NFS : +${amount} XAF`);
       
       const balance = await prisma.systemBalance.upsert({
         where: { code: 'NFS_GLOBAL' },
@@ -21,6 +19,8 @@ export class BalanceService {
         create: {
           code: 'NFS_GLOBAL',
           totalSavings: amount,
+          totalPrincipal: 0,
+          totalLoans: 0,
           availableLiquidity: amount,
           lastUpdated: new Date()
         }
@@ -28,43 +28,86 @@ export class BalanceService {
 
       return balance;
     } catch (error) {
-      console.error('[BalanceService] Erreur lors de la mise à jour du solde:', error);
+      console.error('[BalanceService] Erreur lors de la mise à jour de l’épargne globale:', error);
       throw error;
     }
   }
 
   /**
-   * Recalcule complètement le solde à partir de tous les comptes EPARGNE.
-   * Utile pour la synchronisation initiale ou en cas de doute.
+   * Débite la liquidité globale NFS lors de l'octroi d'un crédit accordé et versé à un bénéficiaire.
+   * @param loanAmount Le montant du crédit accordé
+   */
+  static async recordLoanGranted(loanAmount: number) {
+    try {
+      console.log(`[BalanceService] Débit Crédit Accordé : -${loanAmount} XAF sur la liquidité globale NFS`);
+
+      const balance = await prisma.systemBalance.upsert({
+        where: { code: 'NFS_GLOBAL' },
+        update: {
+          totalLoans: { increment: loanAmount },
+          availableLiquidity: { decrement: loanAmount },
+          lastUpdated: new Date()
+        },
+        create: {
+          code: 'NFS_GLOBAL',
+          totalSavings: 0,
+          totalPrincipal: 0,
+          totalLoans: loanAmount,
+          availableLiquidity: -loanAmount,
+          lastUpdated: new Date()
+        }
+      });
+
+      return balance;
+    } catch (error) {
+      console.error('[BalanceService] Erreur lors de l’enregistrement du crédit accordé:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Recalcule complètement le solde NFS à partir de tous les comptes EPARGNE et des Crédits Accordés.
+   * Solde NFS = Total des Épargnes Collectées - Total des Crédits Accordés (APPROVED).
    */
   static async syncGlobalBalance() {
     try {
       const epargneSum = await prisma.account.aggregate({
         where: { type: 'EPARGNE' },
-        _sum: { availableBalance: true }
+        _sum: { currentBalance: true }
       });
 
       const principalSum = await prisma.account.aggregate({
         where: { type: 'PRINCIPAL' },
-        _sum: { availableBalance: true }
+        _sum: { currentBalance: true }
       });
 
-      const totalSavings = epargneSum._sum.availableBalance || 0;
-      const totalPrincipal = principalSum._sum.availableBalance || 0;
+      const approvedLoansSum = await prisma.loan.aggregate({
+        where: { status: 'APPROVED' },
+        _sum: { amount: true }
+      });
+
+      const totalSavings = epargneSum._sum.currentBalance || 0;
+      const totalPrincipal = principalSum._sum.currentBalance || 0;
+      const totalLoans = approvedLoansSum._sum.amount || 0;
+
+      // Solde NFS disponible = Épargne totale - Crédits accordés
+      const availableLiquidity = totalSavings - totalLoans;
 
       const balance = await prisma.systemBalance.upsert({
         where: { code: 'NFS_GLOBAL' },
         update: {
           totalSavings: totalSavings,
           totalPrincipal: totalPrincipal,
-          availableLiquidity: totalSavings, // On considère la liquidité comme l'épargne disponible
+          totalLoans: totalLoans,
+          availableLiquidity: availableLiquidity,
           lastUpdated: new Date()
         },
         create: {
           code: 'NFS_GLOBAL',
           totalSavings: totalSavings,
           totalPrincipal: totalPrincipal,
-          availableLiquidity: totalSavings,
+          totalLoans: totalLoans,
+          availableLiquidity: availableLiquidity,
           lastUpdated: new Date()
         }
       });
@@ -77,18 +120,9 @@ export class BalanceService {
   }
 
   /**
-   * Récupère le solde global actuel.
+   * Récupère le solde global actuel synchronisé en temps réel avec tous les comptes EPARGNE.
    */
   static async getGlobalBalance() {
-    let balance = await prisma.systemBalance.findUnique({
-      where: { code: 'NFS_GLOBAL' }
-    });
-
-    if (!balance) {
-      // Si n'existe pas encore, on le crée en synchronisant
-      balance = await this.syncGlobalBalance();
-    }
-
-    return balance;
+    return await this.syncGlobalBalance();
   }
 }

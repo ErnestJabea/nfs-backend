@@ -48,8 +48,16 @@ export const deliverTransactionOtp = async (
   }
 
   if (recipient.email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    await sendTransactionOtpEmail(recipient.email, code, summary);
-    return { channel: 'email', destination: maskEmail(recipient.email) };
+    try {
+      await sendTransactionOtpEmail(recipient.email, code, summary);
+      return { channel: 'email', destination: maskEmail(recipient.email) };
+    } catch (error) {
+      console.error('[OTP Delivery] Echec de l’envoi d’email OTP:', error);
+      if (process.env.NODE_ENV !== 'production' || process.env.OTP_DEV_EXPOSE_CODE === 'true') {
+        return { channel: 'development', destination: 'development', developmentOtp: code };
+      }
+      throw error;
+    }
   }
 
   if (process.env.NODE_ENV !== 'production' && process.env.OTP_DEV_EXPOSE_CODE === 'true') {

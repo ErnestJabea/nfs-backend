@@ -45,6 +45,8 @@ model User {
   penaltyAmount   Float?    @default(0)
   updatedAt       DateTime? @updatedAt
   tokenVersion    Int       @default(0)
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret String?
 
   referredBy      User?     @relation("UserReferrals", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   referredById    String?   @db.ObjectId
@@ -66,25 +68,28 @@ model User {
 }
 
 model Loan {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String    @db.ObjectId
-  user            User      @relation(fields: [userId], references: [id])
-  transactionId   String?   @db.ObjectId
-  amount          Float
-  interestRate    Float     @default(0)
-  totalInterest   Float?    @default(0)
-  duration        Int       // in months
-  purpose         String?
-  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
-  avalistes       Json?     @default("[]")     // List of { userId, amount, interestShare }
-  createdBy       String?
-  createdById     String?   @db.ObjectId
-  validatedBy     String[]  @default([])
-  createdAt       DateTime? @default(now())
-  approvedAt      DateTime?
-  dueDate         DateTime?
-  penaltyAmount   Float?    @default(0)
-  updatedAt       DateTime? @updatedAt
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String    @db.ObjectId
+  user              User      @relation(fields: [userId], references: [id])
+  transactionId     String?   @db.ObjectId
+  amount            Float
+  cAvalAtRequest    Float?
+  isAutoAvalise     Boolean   @default(false)
+  amountToGuarantee Float?
+  interestRate      Float     @default(0)
+  totalInterest     Float?    @default(0)
+  duration          Int       // in months
+  purpose           String?
+  status            String    @default("PENDING") // PENDING, PENDING_COMEX, PENDING_AVALISTS, APPROVED, REJECTED, PAID, DEFAULT
+  avalistes         Json?     @default("[]")     // List of { userId, amount, interestShare }
+  createdBy         String?
+  createdById       String?   @db.ObjectId
+  validatedBy       String[]  @default([])
+  createdAt         DateTime? @default(now())
+  approvedAt        DateTime?
+  dueDate           DateTime?
+  penaltyAmount     Float?    @default(0)
+  updatedAt         DateTime? @updatedAt
 
   @@map("loans")
 }

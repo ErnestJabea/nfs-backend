@@ -90,7 +90,7 @@ export const adminMiddleware = async (req: any, res: Response, next: NextFunctio
       return res.status(403).json({ error: 'Compte administrateur inactif ou introuvable.', code: 'ACCOUNT_DISABLED' });
     }
 
-    if (!user.roles?.includes('ADMIN')) {
+    if (!user.roles?.some(role => ['ADMIN', 'COMEX', 'STAFF'].includes(role))) {
       return res.status(403).json({ error: 'Acces reserve aux administrateurs.', code: 'ADMIN_REQUIRED' });
     }
 

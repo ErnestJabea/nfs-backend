@@ -5,11 +5,35 @@ import { canAccessUser, getRequestUserId, requestIsAdmin } from '../utils/reques
 export const getCotisations = async (req: Request, res: Response) => {
   try {
     const cotisations = await prisma.cotisationGroup.findMany();
-    const mapped = cotisations.map(c => ({
-      ...c,
-      _id: c.id,
-      limit_participant: (c as any).limit_participant || (c as any).maxParticipants || 10
-    }));
+    const mapped = cotisations.map(c => {
+      const rawMemberIds = Array.isArray(c.memberIds) ? c.memberIds : [];
+      const memberIds = Array.from(new Set(rawMemberIds.map(id => String(id))));
+      const max = (c as any).limit_participant || c.maxParticipants || 10;
+      const isGroupActive = (c.status === 'ACTIF' || c.status === 'ACTIVE') && memberIds.length >= max;
+
+      let nextPaymentDue: string | null = (c as any).dueDate || null;
+      if (!nextPaymentDue) {
+        if (isGroupActive) {
+          const now = new Date();
+          const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          nextPaymentDue = lastDayOfMonth.toISOString();
+        } else {
+          nextPaymentDue = 'EN_ATTENTE';
+        }
+      }
+
+      return {
+        ...c,
+        _id: c.id,
+        status: isGroupActive ? 'ACTIF' : 'EN_ATTENTE',
+        limit_participant: max,
+        max_members: max,
+        members_count: memberIds.length,
+        nb_participant: memberIds.length,
+        memberIds,
+        next_payment_due: nextPaymentDue,
+      };
+    });
     res.json({ data: mapped });
   } catch (error: any) {
     console.error('getCotisations error:', error);
@@ -104,16 +128,32 @@ export const assignCotisation = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Acces refuse a cet utilisateur." });
     }
 
-    // Add the user ID to the memberIds array and increment count
+    const currentGroup = await prisma.cotisationGroup.findUnique({ where: { id: idCotisation } });
+    if (!currentGroup) {
+      return res.status(404).json({ error: "Groupe de cotisation introuvable." });
+    }
+
+    const rawMemberIds = Array.isArray(currentGroup.memberIds) ? currentGroup.memberIds : [];
+    const memberIds = Array.from(new Set(rawMemberIds.map(id => String(id))));
+    const max = currentGroup.maxParticipants || (currentGroup as any).limit_participant || 10;
+
+    if (memberIds.includes(userId)) {
+      return res.status(409).json({ error: "L'utilisateur fait deja partie de cette cotisation." });
+    }
+
+    if (memberIds.length >= max) {
+      return res.status(409).json({ error: "Ce groupe de cotisation est deja complet." });
+    }
+
+    const updatedMemberIds = [...memberIds, userId];
+    const newStatus = updatedMemberIds.length >= max ? 'ACTIF' : 'EN_ATTENTE';
+
     const group = await prisma.cotisationGroup.update({
       where: { id: idCotisation },
       data: {
-        memberIds: {
-          push: userId
-        },
-        nb_participant: {
-          increment: 1
-        }
+        memberIds: updatedMemberIds,
+        nb_participant: updatedMemberIds.length,
+        status: newStatus,
       }
     });
 

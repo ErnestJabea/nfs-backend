@@ -1,0 +1,2 @@
+[2026-07-14T23:00:01.774Z] [PID: 23284] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Wed Jul 15 2026 00:00:00 GMT+0100 (UTC+01:00)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-07-14T23:00:01.882Z] [PID: 23284] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Wed Jul 15 2026 00:00:00 GMT+0100 (UTC+01:00)! Possible blocking IO or high CPU user at the same process used by node-cron.

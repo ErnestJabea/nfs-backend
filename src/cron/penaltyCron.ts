@@ -26,22 +26,32 @@ export const startPenaltyCron = () => {
         const diffMs = today.getTime() - loan.dueDate.getTime();
         const daysLate = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-        if (daysLate > 0) {
-          // Taux de pénalité = Taux initial + 2
-          const penaltyRate = (loan.interestRate || 0) + 2;
-          
-          // Formule: Pénalité = Montant * (Taux / 100) * (Jours / Durée du prêt en jours)
-          // On assume que duration est en jours dans LoanConfig.
-          const loanDuration = loan.duration || 30; 
-          
-          const newPenaltyAmount = loan.amount * (penaltyRate / 100) * (daysLate / loanDuration);
+        if (daysLate <= 3) {
+          // 1. Délai de grâce (1 à 3 jours) : 0 pénalité
+          await prisma.loan.update({
+            where: { id: loan.id },
+            data: { penaltyAmount: 0 }
+          });
+        } else if (daysLate <= 30) {
+          // 2. Pénalité de Retard Moratoire (Jour 4 à 30) : 2.0% mensuel pro-rata temporis
+          const effectiveOverdueDays = daysLate - 3;
+          const monthlyRate = 0.02; // 2.0% mensuel
+          const dailyRate = monthlyRate / 30;
+          const newPenaltyAmount = Math.ceil(loan.amount * dailyRate * effectiveOverdueDays);
 
           await prisma.loan.update({
             where: { id: loan.id },
             data: { penaltyAmount: newPenaltyAmount }
           });
           
-          console.log(`CRON: Pénalité calculée pour le prêt ${loan.id} - ${daysLate} jours de retard. Pénalité: ${newPenaltyAmount}`);
+          console.log(`CRON: Pénalité moratoire calculée pour le prêt ${loan.id} - ${effectiveOverdueDays} jours post-grâce. Pénalité: ${newPenaltyAmount} FCFA`);
+        } else {
+          // 3. Appel aux Avalistes (Jour > 30) : Passage en statut DEFAULT
+          await prisma.loan.update({
+            where: { id: loan.id },
+            data: { status: 'DEFAULT' }
+          });
+          console.log(`CRON: Prêt ${loan.id} en impayé prolonge (>30j) -> Passage au statut DEFAULT et appel de la garantie avalistes.`);
         }
       }
       console.log('CRON: Fin du calcul des pénalités.');

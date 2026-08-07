@@ -3,15 +3,19 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const isSecurePort = process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: true, // Forcé à true pour le port 465 (Gmail)
+  secure: isSecurePort,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  connectionTimeout: 10000, // 10 secondes max pour se connecter
+  connectionTimeout: 8000,
+  greetingTimeout: 8000,
+  socketTimeout: 10000,
 });
 
 export const sendResetCode = async (email: string, code: string) => {

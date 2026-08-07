@@ -40,7 +40,11 @@ import {
   updateTransferFee,
   deleteTransferFee,
   getPermissionCatalog,
-  getMyPermissions
+  getMyPermissions,
+  getAdminProfile,
+  changeAdminPassword,
+  setupAdmin2FA,
+  verifyAdmin2FA
 } from '../controllers/adminController';
 import { authMiddleware, adminMiddleware } from '../middlewares/authMiddleware';
 import { requireAnyPermission, requirePermission } from '../middlewares/permissionMiddleware';
@@ -160,5 +164,11 @@ router.get('/loan-configs', requirePermission('loans.configure'), getLoanConfigs
 router.post('/loan-configs', requirePermission('loans.configure'), createLoanConfig);
 router.put('/loan-configs/:id', requirePermission('loans.configure'), updateLoanConfig);
 router.delete('/loan-configs/:id', requirePermission('loans.configure'), deleteLoanConfig);
+
+// Admin Profile & 2FA routes
+router.get('/profile/me', getAdminProfile);
+router.put('/profile/password', changeAdminPassword);
+router.get('/profile/2fa/setup', setupAdmin2FA);
+router.post('/profile/2fa/verify', verifyAdmin2FA);
 
 export default router;

@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const authMiddleware_1 = require("../middlewares/authMiddleware");
+const rateLimiters_1 = require("../middlewares/rateLimiters");
+const transactionIntentController_1 = require("../controllers/transactionIntentController");
+const router = (0, express_1.Router)();
+router.use(authMiddleware_1.authMiddleware);
+router.post('/', rateLimiters_1.transactionIntentRateLimiter, transactionIntentController_1.createTransactionIntent);
+router.post('/:id/confirm', rateLimiters_1.otpVerificationRateLimiter, transactionIntentController_1.confirmTransactionIntent);
+router.post('/:id/resend', rateLimiters_1.otpResendRateLimiter, transactionIntentController_1.resendTransactionOtp);
+router.post('/:id/cancel', transactionIntentController_1.cancelTransactionIntent);
+exports.default = router;

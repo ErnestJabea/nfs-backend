@@ -38,7 +38,7 @@ export const getSessionTtlSeconds = () => {
 export const getSessionCookieOptions = () => ({
   httpOnly: true,
   secure: isProduction,
-  sameSite: 'strict' as const,
+  sameSite: isProduction ? ('strict' as const) : ('lax' as const),
   path: '/',
   maxAge: getSessionTtlSeconds() * 1000,
 });
@@ -79,7 +79,12 @@ export const getAllowedOrigins = () => {
 
 export const isAllowedCorsOrigin = (origin?: string) => {
   if (!origin) return true;
-  return getAllowedOrigins().has(origin);
+  if (getAllowedOrigins().has(origin)) return true;
+  if (!isProduction) {
+    // Permettre l'accès depuis le réseau Wi-Fi / LAN local sur mobile
+    return /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/i.test(origin);
+  }
+  return false;
 };
 
 export const validateSecurityConfiguration = () => {

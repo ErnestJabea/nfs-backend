@@ -1,0 +1,420 @@
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(482,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/authController.ts(487,16): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2322 ]
+}
+(node:33912) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [Bus]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/controllers/transactionController.ts(76,29): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+    at createTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1892:10
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\ND Fashion\.gemini\antigravity\scratch\nfs-backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14) {
+  diagnosticCodes: [ 2345 ]
+}

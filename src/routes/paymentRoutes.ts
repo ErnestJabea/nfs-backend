@@ -19,7 +19,7 @@ router.get('/providers', (_req: Request, res: Response) => {
         id: 'STRIPE',
         name: 'Stripe',
         enabled: true,
-        methods: ['CARD'],
+        methods: ['CARD', 'ORANGE_MONEY', 'MTN_MOMO'],
         publishableKey: stripePublishableKey,
       },
       {
@@ -86,13 +86,22 @@ router.post('/stripe/webhook', express.raw({ type: 'application/json' }), async 
 });
 
 router.get('/:reference', async (req: Request, res: Response) => {
-  const refStr = String(req.params.reference || '');
+  const refStr = String(req.params.reference || '').trim();
+  const lowerRef = refStr.toLowerCase();
+
   let transaction = await prisma.transaction.findFirst({
-    where: { OR: [{ transactionRef: refStr }, { transactionRef: `STRIPE_${refStr}` }] },
+    where: {
+      OR: [
+        { transactionRef: refStr },
+        { transactionRef: lowerRef },
+        { transactionRef: `STRIPE_${refStr}` },
+        { transactionRef: `STRIPE_${lowerRef}` },
+      ],
+    },
   });
 
   // Si la transaction n'est pas encore en base de données et concerne une session Stripe (ex. cs_test_...), vérifier en direct auprès de l'API Stripe
-  if (!transaction && refStr.startsWith('cs_')) {
+  if (!transaction && (refStr.startsWith('cs_') || lowerRef.startsWith('cs_'))) {
     try {
       const stripe = getStripeClient();
       const session = await stripe.checkout.sessions.retrieve(refStr);
@@ -100,7 +109,14 @@ router.get('/:reference', async (req: Request, res: Response) => {
         console.log(`[Stripe Sync Check] Verification directe reussie pour la session ${refStr}. Execution du credit...`);
         await processStripeCheckoutCompleted(session);
         transaction = await prisma.transaction.findFirst({
-          where: { OR: [{ transactionRef: refStr }, { transactionRef: `STRIPE_${refStr}` }] },
+          where: {
+            OR: [
+              { transactionRef: refStr },
+              { transactionRef: lowerRef },
+              { transactionRef: `STRIPE_${refStr}` },
+              { transactionRef: `STRIPE_${lowerRef}` },
+            ],
+          },
         });
       }
     } catch (err: any) {

@@ -1,0 +1,113 @@
+
+> backend@1.0.0 dev
+> nodemon src/index.ts
+
+[33m[nodemon] 3.1.14[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: ts,json[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mOPTIONS /api/auth/admin/login [32m200[0m 1.890 ms - 4[0m
+[0mOPTIONS /api/auth/admin/login [32m200[0m 1.444 ms - 4[0m
+[0mOPTIONS /api/auth/admin/login [32m200[0m 0.313 ms - 4[0m
+[0mOPTIONS /api/auth/admin/login [32m200[0m 0.267 ms - 4[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mPOST /api/auth/admin/login [32m200[0m 14474.006 ms - 356[0m
+[0mGET /api/admin/me/permissions [32m200[0m 3542.090 ms - 1301[0m
+[0mGET /api/admin/currencies [32m200[0m 9173.910 ms - 10357[0m
+[0mGET /api/admin/currencies [36m304[0m 4127.524 ms - -[0m
+[0mPOST /api/auth/admin/login [32m200[0m 5340.366 ms - 356[0m
+[0mGET /api/admin/me/permissions [32m200[0m 995.188 ms - 1301[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 9454.020 ms - 3785[0m
+[0mGET /api/admin/currencies [32m200[0m 2184.963 ms - 10357[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 3170.465 ms - 3785[0m
+[0mGET /api/admin/transactions?limit=5 [32m200[0m 33848.926 ms - 3785[0m
+[0mGET /api/admin/currencies [36m304[0m 5337.877 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 4554.808 ms - -[0m
+[0mGET /api/admin/loans?page=1&limit=10&status=ALL&search= [32m200[0m 10475.921 ms - 5591[0m
+[0mGET /api/admin/loans?page=1&limit=10&status=ALL&search= [36m304[0m 3377.438 ms - -[0m
+[0mGET /api/admin/stats [32m200[0m 64343.518 ms - 1984252[0m
+[0mGET /api/admin/stats [32m200[0m 54727.915 ms - 1984252[0m
+[0mGET /api/admin/users?role=CLIENT [32m200[0m 15444.346 ms - 2130511[0m
+[0mGET /api/admin/stats [32m200[0m 49613.317 ms - 1984252[0m
+[0mGET /api/admin/users?role=CLIENT [36m304[0m 3960.970 ms - -[0m
+[0mGET /api/admin/stats [32m200[0m 55885.419 ms - 1984252[0m
+[0mGET /api/admin/tontines [0m-[0m - ms - -[0m
+[0mGET /api/admin/tontines [0m-[0m - ms - -[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/admin/tontines [32m200[0m 28564.785 ms - 2097[0m
+[0mGET /api/admin/tontines [32m200[0m 28671.821 ms - 2097[0m
+[0mGET /api/admin/users?role=CLIENT [32m200[0m 33926.593 ms - 2130511[0m
+[0mGET /api/admin/users?role=CLIENT [32m200[0m 34759.900 ms - 2130511[0m
+[0mGET /api/admin/tontines [32m200[0m 1046.370 ms - 2097[0m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+📄 Swagger docs available at http://localhost:5000/api-docs
+Server is running on port 5000
+Available at http://localhost:5000
+[0mGET /api/admin/currencies [36m304[0m 4329.461 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 1062.560 ms - -[0m
+[0mGET /api/admin/transfer-fees [32m200[0m 5804.467 ms - 609[0m
+[0mGET /api/admin/transfer-fees [36m304[0m 1186.617 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=mobile [32m200[0m 2978.511 ms - 7705[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=mobile [36m304[0m 1200.468 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [32m200[0m 1197.019 ms - 7393[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [36m304[0m 1329.634 ms - -[0m
+[0mGET /api/admin/tontines [36m304[0m 928.859 ms - -[0m
+[0mGET /api/admin/tontines [36m304[0m 932.322 ms - -[0m
+[0mGET /api/admin/users [32m200[0m 19528.332 ms - 7664643[0m
+[0mGET /api/admin/users [36m304[0m 17671.631 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 5690.945 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 6215.663 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 1340.354 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 1140.395 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 9377.392 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 6524.155 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [36m304[0m 1307.302 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=admin [36m304[0m 1207.725 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=mobile [36m304[0m 1203.765 ms - -[0m
+[0mGET /api/admin/transactions?page=1&limit=10&scope=mobile [36m304[0m 1197.666 ms - -[0m
+[0mGET /api/admin/users?role=ADMIN [32m200[0m 11508.471 ms - 5534133[0m
+[0mGET /api/admin/groups [32m200[0m 19301.059 ms - 5507741[0m
+[0mGET /api/admin/users?role=ADMIN [36m304[0m 8374.585 ms - -[0m
+[0mGET /api/admin/groups [36m304[0m 8043.660 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 5458.246 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 6751.762 ms - -[0m
+[0mGET /api/admin/currencies [36m304[0m 1771.522 ms - -[0m
+[0mGET /api/admin/transactions?limit=5 [36m304[0m 1569.903 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 10833.146 ms - -[0m
+[0mGET /api/admin/stats [36m304[0m 7196.632 ms - -[0m
+[0mGET /api/admin/users?role=ADMIN [33m401[0m 6.395 ms - 80[0m
+[0mGET /api/admin/users?role=ADMIN [33m401[0m 0.710 ms - 80[0m
+[0mGET /api/admin/groups [33m401[0m 0.756 ms - 80[0m
+[0mGET /api/admin/groups [33m401[0m 0.754 ms - 80[0m
