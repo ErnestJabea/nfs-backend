@@ -105,6 +105,9 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
     const amount = amountValue(payload.amount);
     const sourceAccountType = accountType(payload.fromAccount || payload.sourceAccountType);
     const targetAccountType = accountType(payload.toAccount || payload.targetAccountType);
+    if (sourceAccountType === 'EPARGNE' && targetAccountType === 'PRINCIPAL') {
+      throw new TransactionError('Le transfert du compte Épargne vers le Wallet principal est désactivé.', 'EPARGNE_TO_WALLET_DISABLED', 400);
+    }
     if (sourceAccountType === targetAccountType) {
       throw new TransactionError('Les comptes source et destination doivent etre differents.', 'SAME_ACCOUNT');
     }
@@ -315,6 +318,7 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
     const amount = amountValue(payload.amount);
     const targetAccountType = accountType(payload.targetAccountType || 'PRINCIPAL');
     const label = targetAccountType === 'EPARGNE' ? 'Solde Épargne' : 'Wallet NFS';
+    const providerName = String(payload.provider || '').toUpperCase() === 'ENKAP' ? 'Maviance' : 'Stripe';
     return {
       type,
       payload: {
@@ -322,7 +326,7 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
         targetAccountType,
         provider: String(payload.provider || 'STRIPE'),
       },
-      summary: `Approvisionnement ${label} de ${amount.toLocaleString('fr-FR')} XAF via Stripe`,
+      summary: `Approvisionnement ${label} de ${amount.toLocaleString('fr-FR')} XAF via ${providerName}`,
     };
   }
 

@@ -6,7 +6,14 @@ import {
   processStripeCheckoutCompleted,
   getStripeClient,
 } from '../services/stripeService';
+import {
+  createEnkapOrder,
+  getEnkapOrderStatus,
+  processEnkapOrderCompleted,
+} from '../services/enkapService';
+import { handleEnkapWebhookNotification } from '../controllers/enkapController';
 import prisma from '../utils/prisma';
+
 
 const router = Router();
 
@@ -21,6 +28,12 @@ router.get('/providers', (_req: Request, res: Response) => {
         enabled: true,
         methods: ['CARD', 'ORANGE_MONEY', 'MTN_MOMO'],
         publishableKey: stripePublishableKey,
+      },
+      {
+        id: 'ENKAP',
+        name: 'Paiement Mobile Local (Orange / MTN)',
+        enabled: true,
+        methods: ['ORANGE_MONEY', 'MTN_MOMO', 'EXPRESS_UNION', 'CARTE'],
       },
       {
         id: 'FLUTTERWAVE',
@@ -85,6 +98,88 @@ router.post('/stripe/webhook', express.raw({ type: 'application/json' }), async 
   }
 });
 
+// --- Endpoints Enkap (Maviance Sandbox Kori) ---
+
+// Endpoint authentifié pour créer une commande Enkap
+router.post('/enkap/create-order', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true, lastName: true, phone: true },
+    });
+    const { type, targetAccountType, groupId, amount, currency, returnUrl } = req.body;
+
+    const result = await createEnkapOrder({
+      userId,
+      customerName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
+      userEmail: user?.email || undefined,
+      phoneNumber: user?.phone || undefined,
+      type: type === 'COTISATION_PAYMENT' ? 'COTISATION_PAYMENT' : 'ACCOUNT_FUNDING',
+      targetAccountType: targetAccountType === 'EPARGNE' ? 'EPARGNE' : 'PRINCIPAL',
+      groupId: groupId ? String(groupId) : undefined,
+      amount: Number(amount),
+      currency: currency || 'XAF',
+      returnUrl: String(returnUrl || `${req.headers.origin || 'https://app.nfs.ejabbing.com'}/funding?reference={ORDER_REF}`),
+    });
+
+    return res.json({
+      ...result,
+      checkoutUrl: result.paymentUrl,
+    });
+  } catch (error: any) {
+    console.error('[Enkap Create Order Route Error]:', error);
+    return res.status(400).json({ error: error.message || 'Impossible de créer la commande Enkap.' });
+  }
+});
+
+router.post('/enkap/collect', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true, lastName: true, phone: true },
+    });
+    const { type, targetAccountType, groupId, amount, currency, returnUrl, phone } = req.body;
+
+    const result = await createEnkapOrder({
+      userId,
+      customerName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
+      userEmail: user?.email || undefined,
+      phoneNumber: phone || user?.phone || undefined,
+      type: type === 'COTISATION_PAYMENT' ? 'COTISATION_PAYMENT' : 'ACCOUNT_FUNDING',
+      targetAccountType: targetAccountType === 'EPARGNE' ? 'EPARGNE' : 'PRINCIPAL',
+      groupId: groupId ? String(groupId) : undefined,
+      amount: Number(amount),
+      currency: currency || 'XAF',
+      returnUrl: String(returnUrl || `${req.headers.origin || 'https://app.nfs.ejabbing.com'}/funding?account=${targetAccountType || 'PRINCIPAL'}&reference={ORDER_REF}`),
+    });
+
+    return res.json({
+      ...result,
+      checkoutUrl: result.paymentUrl,
+    });
+  } catch (error: any) {
+    console.error('[Enkap Collect Route Error]:', error);
+    return res.status(400).json({ error: error.message || 'Impossible de créer la commande Enkap.' });
+  }
+});
+
+// Endpoint Webhook / Callback Notification public Enkap (Zero-Trust)
+router.all(['/enkap/notification', '/enkap/notification/:merchantReference'], handleEnkapWebhookNotification);
+
+
+// Endpoint d'inspection directe du statut d'une commande Enkap
+router.get('/enkap/status/:orderMerchantId', async (req: Request, res: Response) => {
+  try {
+    const orderMerchantId = String(req.params.orderMerchantId);
+    const statusData = await getEnkapOrderStatus(orderMerchantId);
+    return res.json(statusData || { status: 'UNKNOWN' });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
 router.get('/:reference', async (req: Request, res: Response) => {
   const refStr = String(req.params.reference || '').trim();
   const lowerRef = refStr.toLowerCase();
@@ -96,6 +191,8 @@ router.get('/:reference', async (req: Request, res: Response) => {
         { transactionRef: lowerRef },
         { transactionRef: `STRIPE_${refStr}` },
         { transactionRef: `STRIPE_${lowerRef}` },
+        { transactionRef: `ENKAP_${refStr}` },
+        { transactionRef: `ENKAP_${lowerRef}` },
       ],
     },
   });
@@ -124,13 +221,43 @@ router.get('/:reference', async (req: Request, res: Response) => {
     }
   }
 
+  // Si la transaction n'est pas encore en base de données et concerne Enkap (ex. ENKAP_...), vérifier en direct
+  if (!transaction && (refStr.startsWith('ENKAP_') || lowerRef.startsWith('enkap_'))) {
+    try {
+      const enkapStatus = await getEnkapOrderStatus(refStr);
+      if (enkapStatus && (enkapStatus.status === 'SUCCESS' || enkapStatus.status === 'PAID')) {
+        const refParts = (enkapStatus.optRefTwo || '').split(':');
+        await processEnkapOrderCompleted({
+          orderMerchantId: refStr,
+          txid: enkapStatus.txid,
+          userId: enkapStatus.optRefOne,
+          type: refParts[0] === 'COTISATION_PAYMENT' ? 'COTISATION_PAYMENT' : 'ACCOUNT_FUNDING',
+          targetAccountType: refParts[1] === 'EPARGNE' ? 'EPARGNE' : 'PRINCIPAL',
+          groupId: refParts[2] || undefined,
+          amount: Number(enkapStatus.totalAmount || enkapStatus.amount || 0),
+        });
+
+        transaction = await prisma.transaction.findFirst({
+          where: {
+            OR: [
+              { transactionRef: refStr },
+              { transactionRef: `ENKAP_${refStr}` },
+            ],
+          },
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[Enkap Direct Sync Warn] ${err.message}`);
+    }
+  }
+
   if (transaction) {
     return res.json({
       reference: transaction.transactionRef,
       status: transaction.status === 'SUCCESS' ? 'SUCCEEDED' : transaction.status,
       amount: Math.abs(Number(transaction.amount || 0)),
       currency: transaction.currency || 'XAF',
-      message: 'Paiement Stripe vérifié avec succès.',
+      message: 'Paiement vérifié avec succès.',
     });
   }
 
@@ -144,3 +271,4 @@ router.get('/:reference', async (req: Request, res: Response) => {
 });
 
 export default router;
+

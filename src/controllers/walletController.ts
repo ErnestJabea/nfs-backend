@@ -3,6 +3,35 @@ import prisma from '../utils/prisma';
 import { computeAvalise } from '../utils/computeAvalise';
 import { calculateTransferFee } from './adminController';
 
+const buildUserSearchConditions = (input: string) => {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return [];
+  const normalized = trimmed.toUpperCase();
+  const cleanPhone = trimmed.replace(/\D/g, '');
+  const isObjectId = /^[a-f\d]{24}$/i.test(trimmed);
+
+  const conditions: any[] = [
+    { accountNumber: normalized },
+    { accountNumber: `NFS-${normalized}` },
+    { uniqueKey: normalized },
+    { uniqueKey: `KEY-${normalized}` },
+  ];
+
+  if (isObjectId) {
+    conditions.push({ id: trimmed });
+  }
+
+  if (cleanPhone.length >= 8) {
+    conditions.push(
+      { phone: cleanPhone },
+      { phone: `+${cleanPhone}` },
+      { phone: `+237${cleanPhone}` }
+    );
+  }
+
+  return conditions;
+};
+
 export const getWallets = async (req: any, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
@@ -42,9 +71,11 @@ export const transfer = async (req: any, res: Response) => {
       return res.status(404).json({ error: "Expéditeur introuvable." });
     }
 
-    const normalizedAccountNumber = String(recipientAccountNumber).trim().toUpperCase();
-    const recipient = await prisma.user.findUnique({
-      where: { accountNumber: normalizedAccountNumber }
+    const searchConditions = buildUserSearchConditions(recipientAccountNumber);
+    const recipient = await prisma.user.findFirst({
+      where: {
+        OR: searchConditions,
+      },
     });
 
     if (!recipient) {
@@ -231,13 +262,15 @@ export const transferPreview = async (req: any, res: Response) => {
     let convertedAmount = transferAmount;
 
     if (recipientAccountNumber) {
-      const normalizedAccountNumber = String(recipientAccountNumber).trim().toUpperCase();
-      const recipient = await prisma.user.findUnique({
-        where: { accountNumber: normalizedAccountNumber }
+      const searchConditions = buildUserSearchConditions(recipientAccountNumber);
+      const recipient = await prisma.user.findFirst({
+        where: {
+          OR: searchConditions,
+        }
       });
 
       if (recipient) {
-        recipientName = `${recipient.firstName} ${recipient.lastName}`.toUpperCase();
+        recipientName = `${recipient.firstName || ''} ${recipient.lastName || ''}`.trim().toUpperCase() || 'MEMBRE NFS';
         const recipientAccounts = await prisma.account.findMany({
           where: { id: { in: recipient.accountIds || [] } }
         });
@@ -292,9 +325,11 @@ export const lookupUserByAccountNumber = async (req: any, res: Response) => {
       return res.status(400).json({ error: "Numéro de compte requis." });
     }
 
-    const normalizedAccountNumber = String(accountNumber).trim().toUpperCase();
-    const user = await prisma.user.findUnique({
-      where: { accountNumber: normalizedAccountNumber },
+    const searchConditions = buildUserSearchConditions(accountNumber);
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: searchConditions,
+      },
       select: {
         id: true,
         firstName: true,

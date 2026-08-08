@@ -25,17 +25,19 @@ import prisma from './utils/prisma';
 import { execSync } from 'child_process';
 import path from 'path';
 
-try {
-  const prismaCliPath = path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
-  console.log('[PRISMA AUTO-GENERATE] Updating Prisma Client...');
-  execSync(`"${process.execPath}" "${prismaCliPath}" generate`, {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit'
-  });
-  console.log('[PRISMA AUTO-GENERATE] Prisma Client generated successfully!');
-} catch (e: any) {
-  console.error('[PRISMA AUTO-GENERATE WARNING]:', e?.message || e);
+if (process.env.PRISMA_AUTO_GENERATE === 'true') {
+  try {
+    const prismaCliPath = path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
+    console.log('[PRISMA AUTO-GENERATE] Updating Prisma Client...');
+    execSync(`"${process.execPath}" "${prismaCliPath}" generate`, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'inherit'
+    });
+    console.log('[PRISMA AUTO-GENERATE] Prisma Client generated successfully!');
+  } catch (e: any) {
+    console.warn('[PRISMA AUTO-GENERATE SKIPPED]: Engine binary locked or already up-to-date.');
+  }
 }
 
 const app = express();
@@ -203,11 +205,15 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   return sendErrorResponse(res, err);
 });
 
+import { startEnkapReconciliationCron } from './cron/enkapReconciliationCron';
+
 startPenaltyCron();
+startEnkapReconciliationCron(10);
 app.listen(Number(PORT), () => {
   console.log(`Server is running on port ${PORT}`);
   initCurrencyJob();
   ensureAdminAccountsOnStartup();
   console.log('NFS Backend fully reloaded and active.');
 });
+
 

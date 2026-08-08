@@ -142,17 +142,27 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Le telephone ou l'email est requis" });
     }
 
-    // Normalisation du numéro de téléphone (on retire le + s'il existe)
-    const phoneWithoutPlus = loginIdentifier.startsWith('+') ? loginIdentifier.substring(1) : loginIdentifier;
-    const phoneWithPlus = loginIdentifier.startsWith('+') ? loginIdentifier : `+${loginIdentifier}`;
+    const cleanId = String(loginIdentifier || '').trim();
+    const phoneWithoutPlus = cleanId.startsWith('+') ? cleanId.substring(1) : cleanId;
+    const phoneWithPlus = cleanId.startsWith('+') ? cleanId : `+${cleanId}`;
+    const rawNumber = cleanId.replace(/^\+?237/, '');
+    const phone237 = `237${rawNumber}`;
+    const phonePlus237 = `+237${rawNumber}`;
+    const normalizedAccount = cleanId.toUpperCase();
 
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { phone: loginIdentifier },
+          { phone: cleanId },
+          { phone: rawNumber },
           { phone: phoneWithoutPlus },
           { phone: phoneWithPlus },
-          { email: loginIdentifier.toLowerCase() }
+          { phone: phone237 },
+          { phone: phonePlus237 },
+          { email: cleanId.toLowerCase() },
+          { accountNumber: normalizedAccount },
+          { accountNumber: `NFS-${normalizedAccount}` },
+          { uniqueKey: normalizedAccount },
         ]
       }
     });
