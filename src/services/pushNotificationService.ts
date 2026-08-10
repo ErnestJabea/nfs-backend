@@ -10,7 +10,7 @@ try {
 // Base64URL VAPID Keys
 const PUBLIC_VAPID_KEY = process.env.VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMe9i34CchR0D26j_xU5x5w9u34CchR0D26j_xU5x5w9u34Cc';
 const PRIVATE_VAPID_KEY = process.env.VAPID_PRIVATE_KEY || 'xU5x5w9u34CchR0D26j_xU5x5w9u34Cc_BEl62iUYgUi';
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@nfs.cm';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:ernestjabea@gmail.com';
 
 if (webpush) {
   try {

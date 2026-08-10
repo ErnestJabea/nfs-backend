@@ -207,13 +207,27 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 import { startEnkapReconciliationCron } from './cron/enkapReconciliationCron';
 
+const rawPort = process.env.PORT;
+const isNumericPort = rawPort && !isNaN(Number(rawPort));
+const PORT = isNumericPort ? Number(rawPort) : (rawPort || 5000);
+
 startPenaltyCron();
 startEnkapReconciliationCron(10);
-app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
-  initCurrencyJob();
-  ensureAdminAccountsOnStartup();
-  console.log('NFS Backend fully reloaded and active.');
-});
+
+if (typeof PORT === 'number') {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`);
+    initCurrencyJob();
+    ensureAdminAccountsOnStartup();
+    console.log('NFS Backend fully reloaded and active.');
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`Server is listening on Passenger socket: ${PORT}`);
+    initCurrencyJob();
+    ensureAdminAccountsOnStartup();
+    console.log('NFS Backend fully reloaded and active.');
+  });
+}
 
 
