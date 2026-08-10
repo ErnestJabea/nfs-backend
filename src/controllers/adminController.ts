@@ -919,6 +919,62 @@ export const getCotisations = async (req: Request, res: Response) => {
   }
 };
 
+export const getReferralStats = async (req: Request, res: Response) => {
+  try {
+    const [totalUsers, referredUsers, parrainageAccounts] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { referredById: { not: null } } }),
+      prisma.account.aggregate({
+        where: { type: 'PARRAINAGE' },
+        _sum: { currentBalance: true }
+      })
+    ]);
+
+    const totalCommissions = parrainageAccounts._sum.currentBalance || 0;
+    const conversionRate = totalUsers > 0 ? (referredUsers / totalUsers) * 100 : 0;
+
+    const topReferrersRaw = await prisma.user.groupBy({
+      by: ['referredById'],
+      _count: { id: true },
+      where: { referredById: { not: null } },
+      orderBy: { _count: { id: 'desc' } },
+      take: 10
+    });
+
+    const topReferrers = await Promise.all(topReferrersRaw.map(async (ref) => {
+      const user = await prisma.user.findUnique({
+        where: { id: ref.referredById! }
+      });
+
+      const parrainageAcc = await prisma.account.findFirst({
+        where: {
+          id: { in: user?.accountIds || [] },
+          type: 'PARRAINAGE'
+        }
+      });
+
+      return {
+        id: user?.id,
+        name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.email || 'Membre NFS',
+        email: user?.email,
+        phone: user?.phone,
+        code: user?.referralCode || user?.accountNumber || user?.uniqueKey || user?.id,
+        referralsCount: ref._count.id,
+        commissions: parrainageAcc?.currentBalance || 0
+      };
+    }));
+
+    res.json({
+      totalReferrals: referredUsers,
+      totalCommissions,
+      conversionRate: Math.round(conversionRate),
+      topReferrers
+    });
+  } catch (error: any) {
+    console.error('getReferralStats error:', error);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
 
 export const getAdminProfile = async (req: any, res: Response) => {
   try {
@@ -1726,61 +1782,22 @@ export const getTransactions = async (req: Request, res: Response) => {
   }
 };
 
-export const getReferralStats = async (req: Request, res: Response) => {
-  try {
-    const [totalUsers, referredUsers, parrainageAccounts] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { referredById: { not: null } } }),
-      prisma.account.aggregate({
-        where: { type: 'PARRAINAGE' },
-        _sum: { currentBalance: true }
-      })
-    ]);
 
-    const totalCommissions = parrainageAccounts._sum.currentBalance || 0;
-    const conversionRate = totalUsers > 0 ? (referredUsers / totalUsers) * 100 : 0;
 
-    // Get top referrers
-    const topReferrersRaw = await prisma.user.groupBy({
-      by: ['referredById'],
-      _count: { id: true },
-      where: { referredById: { not: null } },
-      orderBy: { _count: { id: 'desc' } },
-      take: 10
-    });
 
-    const topReferrers = await Promise.all(topReferrersRaw.map(async (ref) => {
-      const user = await prisma.user.findUnique({
-        where: { id: ref.referredById! }
-      });
+
+
       
-      const parrainageAcc = await prisma.account.findFirst({
-        where: {
-          id: { in: user?.accountIds || [] },
-          type: 'PARRAINAGE'
-        }
-      });
 
-      return {
-        id: user?.id,
-        name: `${user?.firstName} ${user?.lastName}`,
-        code: user?.referralCode,
-        referralsCount: ref._count.id,
-        commissions: parrainageAcc?.currentBalance || 0
-      };
-    }));
 
-    res.json({
-      totalReferrals: referredUsers,
-      totalCommissions,
-      conversionRate: Math.round(conversionRate),
-      topReferrers
-    });
-  } catch (error: any) {
-    console.error('getReferralStats error:', error);
-    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
-  }
-};
+
+
+
+
+
+
+
+
 
 export const getGroups = async (req: Request, res: Response) => {
   try {
@@ -1955,7 +1972,7 @@ export const updateUserKYC = async (req: Request, res: Response) => {
     const allowedFields = [
       'documentType', 'documentNumber', 'documentUrl', 'address', 'addressImageUrl',
       'ribUrl', 'swiftCode', 'beneficiaries', 'emergencyContacts', 'profession',
-      'country', 'joiningYear', 'kycStatus'
+      'country', 'joiningYear', 'kycStatus', 'referralCode', 'accountNumber', 'uniqueKey'
     ];
     const data: any = {};
     for (const field of allowedFields) {

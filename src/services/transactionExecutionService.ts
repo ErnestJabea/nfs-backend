@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { calculateTransferFee } from '../controllers/adminController';
 import { sendTransactionInvoiceEmail } from '../utils/mailer';
 import { computeAvalise } from '../utils/computeAvalise';
+import { dispatchNotification } from './notificationDispatcher';
 
 class TransactionError extends Error {
   status: number;
@@ -31,9 +32,15 @@ const amountValue = (value: unknown) => {
   return amount;
 };
 
+const stringIdValue = (value: unknown, name: string) => {
+  const id = String(value || '').trim();
+  if (!id) throw new TransactionError(`${name} requis.`, 'INVALID_ID');
+  return id;
+};
+
 const objectIdValue = (value: unknown, name: string) => {
-  const id = String(value || '');
-  if (!/^[a-f\d]{24}$/i.test(id)) throw new TransactionError(`${name} invalide.`, 'INVALID_ID');
+  const id = String(value || '').trim();
+  if (!id) throw new TransactionError(`${name} invalide.`, 'INVALID_ID');
   return id;
 };
 
@@ -135,10 +142,19 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
     if (!/^[A-Z0-9-]{6,40}$/.test(recipientAccountNumber)) {
       throw new TransactionError('Numero de compte destinataire invalide.', 'INVALID_RECIPIENT');
     }
-    const [source, recipient] = await Promise.all([
-      getOwnedAccount(prisma, userId, sourceAccountType),
-      prisma.user.findUnique({ where: { accountNumber: recipientAccountNumber } }),
-    ]);
+    const source = await getOwnedAccount(prisma, userId, sourceAccountType);
+    const recipient = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { accountNumber: recipientAccountNumber },
+          { accountNumber: `NFS-${recipientAccountNumber}` },
+          { accountNumber: { contains: recipientAccountNumber, mode: 'insensitive' } },
+          { uniqueKey: recipientAccountNumber },
+          { uniqueKey: `KEY-${recipientAccountNumber}` },
+          ...(/^[a-f\d]{24}$/i.test(recipientAccountNumber) ? [{ id: recipientAccountNumber }] : []),
+        ],
+      },
+    });
     if (!recipient || recipient.id === userId) throw new TransactionError('Destinataire invalide.', 'INVALID_RECIPIENT');
     await getOwnedAccount(prisma, recipient.id, targetAccountType);
     const fees = await calculateTransferFee(amount, source.currency || 'XAF');
@@ -167,12 +183,23 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
       const config = await prisma.loanConfig.findFirst({ where: { code: creditTypeCode } });
       if (config) {
         rate = Number(config.rate !== undefined ? config.rate : rate);
-        durationMonths = Math.max(1, Math.ceil(Number(config.duration || 180) / 30));
+        if ((config as any).duration) {
+          durationMonths = Math.max(1, Math.ceil(Number((config as any).duration) / 30));
+        }
+
+        const minAmt = Number((config as any).minAmount || 0);
+        const maxAmt = Number((config as any).maxAmount || 0);
+        if (minAmt > 0 && amount < minAmt) {
+          throw new TransactionError(`Le montant minimum pour ce type de crédit est de ${minAmt.toLocaleString('fr-FR')} FCFA.`, 'LOAN_AMOUNT_TOO_LOW', 400);
+        }
+        if (maxAmt > 0 && amount > maxAmt) {
+          throw new TransactionError(`Le montant maximum pour ce type de crédit est de ${maxAmt.toLocaleString('fr-FR')} FCFA.`, 'LOAN_AMOUNT_TOO_HIGH', 400);
+        }
       }
     }
 
     if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 60) {
-      throw new TransactionError('Duree de credit invalide.', 'INVALID_DURATION');
+      throw new TransactionError('Durée de crédit invalide.', 'INVALID_DURATION');
     }
 
     // 1. Calcul de la Capacité d'Avalise C_aval
@@ -314,6 +341,73 @@ export const prepareTransactionPayload = async (userId: string, typeValue: unkno
     };
   }
 
+  if (type === 'COTISATION_SPONSORSHIP') {
+    const groupId = objectIdValue(payload.groupId, 'Groupe de cotisation');
+    const referralCode = String(payload.referralCode || payload.godchildCode || payload.code || '').trim().toUpperCase();
+    if (!referralCode) {
+      throw new TransactionError('Code de parrainage ou identifiant du filleul requis.', 'MISSING_GODCHILD_CODE', 400);
+    }
+
+    const cleanGodchildPhone = referralCode.replace(/\D/g, '');
+    const godchild = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { referralCode: referralCode },
+          { referralCode: { contains: referralCode, mode: 'insensitive' } },
+          { accountNumber: referralCode },
+          { accountNumber: `NFS-${referralCode}` },
+          { accountNumber: { contains: referralCode, mode: 'insensitive' } },
+          { uniqueKey: referralCode },
+          { uniqueKey: `KEY-${referralCode}` },
+          { uniqueKey: { contains: referralCode, mode: 'insensitive' } },
+          ...(cleanGodchildPhone.length >= 6 ? [{ phone: { contains: cleanGodchildPhone } }] : []),
+          ...(/^[a-f\d]{24}$/i.test(referralCode) ? [{ id: referralCode }] : []),
+        ],
+      },
+    });
+
+    if (!godchild || godchild.id === userId) {
+      throw new TransactionError('Filleul introuvable ou invalide.', 'INVALID_GODCHILD', 404);
+    }
+
+    const group = await prisma.cotisationGroup.findUnique({ where: { id: groupId } });
+    if (!group) {
+      throw new TransactionError('Groupe de cotisation introuvable.', 'GROUP_UNAVAILABLE', 404);
+    }
+
+    const unitAmount = Number(group.amount || 0);
+    const participantCount = Number(group.maxParticipants || (group as any).limit_participant || (group.memberIds || []).length || 1);
+    const totalTontineRisk = unitAmount * participantCount;
+
+    const capacityData = await getAvaliseCapacity(prisma, userId);
+    const avaliseCapacity = capacityData.capacity;
+
+    if (totalTontineRisk > avaliseCapacity) {
+      throw new TransactionError(
+        `Votre capacité d'avalise (${Math.floor(avaliseCapacity).toLocaleString('fr-FR')} FCFA) est insuffisante pour couvrir le risque total de cette cotisation (${Math.floor(totalTontineRisk).toLocaleString('fr-FR')} FCFA).`,
+        'INSUFFICIENT_SPONSOR_CAPACITY',
+        400
+      );
+    }
+
+    const godchildName = `${godchild.firstName || ''} ${godchild.lastName || ''}`.trim() || godchild.email || 'Filleul NFS';
+
+    return {
+      type,
+      payload: {
+        groupId,
+        godchildUserId: godchild.id,
+        godchildName,
+        godchildCode: referralCode,
+        unitAmount,
+        participantCount,
+        totalRiskAmount: totalTontineRisk,
+        avaliseCapacity,
+      },
+      summary: `Parrainage de ${godchildName} pour la cotisation ${String(group.name).slice(0, 50)} (Engagement ${totalTontineRisk.toLocaleString('fr-FR')} XAF)`,
+    };
+  }
+
   if (type === 'ACCOUNT_FUNDING' || type === 'ACCOUNT_FUNDING_STRIPE') {
     const amount = amountValue(payload.amount);
     const targetAccountType = accountType(payload.targetAccountType || 'PRINCIPAL');
@@ -414,7 +508,7 @@ export const executeTransactionIntent = async (intent: any) => {
         .catch((err) => console.error('[Invoice User Fetch Error]:', err));
 
       return txResult;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   if (intent.type === 'WALLET_TRANSFER') {
@@ -458,7 +552,7 @@ export const executeTransactionIntent = async (intent: any) => {
         },
       });
       return { transactionId: outgoing.id, reference, status: 'SUCCESS' };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   if (intent.type === 'LOAN_REQUEST') {
@@ -469,7 +563,8 @@ export const executeTransactionIntent = async (intent: any) => {
       });
       if (pendingLoan) throw new TransactionError('Une demande de credit est deja en attente.', 'PENDING_LOAN_EXISTS', 409);
       const reference = `LOAN_${intent.id}`;
-      const initialStatus = 'PENDING_COMEX';
+      const amountToGuarantee = Number(payload.amountToGuarantee || 0);
+      const initialStatus = amountToGuarantee > 0 ? 'PENDING_AVALISTS' : 'PENDING_COMEX';
 
       const borrowerPurpose = String(payload.purpose || `Demande de crédit ${payload.creditTypeCode || 'NFS'}`).replace(/^(CREDIT|LOAN)\s*[-:]\s*/i, '').trim();
 
@@ -491,6 +586,7 @@ export const executeTransactionIntent = async (intent: any) => {
             cAvalAtRequest: payload.cAvalAtRequest,
             isAutoAvalise: payload.isAutoAvalise,
             amountToGuarantee: payload.amountToGuarantee,
+            amountEndorsed: 0,
             avalistes: payload.avalistes
           },
         },
@@ -514,13 +610,13 @@ export const executeTransactionIntent = async (intent: any) => {
         },
       });
       return { transactionId: transaction.id, loanId: loan.id, reference, status: initialStatus };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   if (intent.type === 'AVALISE_CREDIT') {
     return prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({ where: { id: payload.transactionId } });
-      if (!transaction || transaction.status !== 'PENDING' || transaction.userId !== payload.borrowerUserId) {
+      if (!transaction || !['PENDING', 'PENDING_AVALISTS'].includes(String(transaction.status)) || transaction.userId !== payload.borrowerUserId) {
         throw new TransactionError('La demande de credit a change.', 'TRANSACTION_DATA_CHANGED', 409);
       }
       const borrower = await tx.user.findUnique({ where: { id: payload.borrowerUserId }, select: { referredById: true } });
@@ -535,7 +631,8 @@ export const executeTransactionIntent = async (intent: any) => {
 
       const operation: any = transaction.operation || {};
       const currentAmountEndorsed = Number(operation.amountEndorsed || 0);
-      const remainingGuarantee = Math.max(0, Number(transaction.amount || 0) - currentAmountEndorsed);
+      const requiredGuarantee = Number(operation.amountToGuarantee !== undefined ? operation.amountToGuarantee : transaction.amount);
+      const remainingGuarantee = Math.max(0, requiredGuarantee - currentAmountEndorsed);
       if (payload.amount > remainingGuarantee) {
         throw new TransactionError('Le montant depasse la garantie restante.', 'TRANSACTION_DATA_CHANGED', 409);
       }
@@ -560,7 +657,7 @@ export const executeTransactionIntent = async (intent: any) => {
         avalistes.push({ userId: intent.userId, name: guarantorName, amount: payload.amount, date: new Date().toISOString() });
       }
       const amountEndorsed = currentAmountEndorsed + payload.amount;
-      const newStatus = amountEndorsed >= Number(transaction.amount || 0) ? 'VALIDATED' : 'PENDING';
+      const newStatus = amountEndorsed >= requiredGuarantee ? 'PENDING_COMEX' : 'PENDING_AVALISTS';
       const validatedBy = transaction.validatedBy || [];
       await tx.transaction.update({
         where: { id: transaction.id },
@@ -655,6 +752,73 @@ export const executeTransactionIntent = async (intent: any) => {
       });
       return { transactionId: transaction.id, reference, status: 'SUCCESS' };
     });
+  }
+
+  if (intent.type === 'COTISATION_SPONSORSHIP') {
+    return prisma.$transaction(async (tx) => {
+      const { groupId, godchildUserId, godchildName, totalRiskAmount } = payload;
+      
+      const capacityData = await getAvaliseCapacity(tx, intent.userId);
+      if (totalRiskAmount > capacityData.capacity) {
+        throw new TransactionError("Capacité d'avalise insuffisante pour finaliser le parrainage.", 'INSUFFICIENT_GUARANTEE_CAPACITY', 409);
+      }
+
+      let liabilityAccount = capacityData.accounts.find((account: any) => account.type === 'CREDIT_AVALISE');
+      if (liabilityAccount) {
+        liabilityAccount = await credit(tx, liabilityAccount.id, totalRiskAmount);
+      } else {
+        liabilityAccount = await tx.account.create({
+          data: { type: 'CREDIT_AVALISE', currency: 'XAF', currentBalance: totalRiskAmount, availableBalance: totalRiskAmount },
+        });
+        await tx.user.update({ where: { id: intent.userId }, data: { accountIds: { push: liabilityAccount.id } } });
+      }
+
+      await tx.user.update({
+        where: { id: godchildUserId },
+        data: {
+          referredById: intent.userId,
+        },
+      }).catch(() => undefined);
+
+      const reference = `SPONSOR_${intent.id}`;
+      const transaction = await tx.transaction.create({
+        data: {
+          userId: intent.userId,
+          purpose: `Parrainage Cotisation: ${godchildName}`,
+          amount: -totalRiskAmount,
+          status: 'SUCCESS',
+          transactionRef: reference,
+          targetAccountType: 'CREDIT_AVALISE',
+          currency: 'XAF',
+          createdBy: 'TransactionAuthorization',
+          operation: {
+            type: 'cotisation_sponsorship',
+            intentId: intent.id,
+            groupId,
+            godchildUserId,
+            godchildName,
+            cautionAmount: totalRiskAmount,
+          },
+        },
+      });
+
+      // Dispatch Notifications to Godchild & Sponsor
+      dispatchNotification({
+        userId: godchildUserId,
+        type: 'SPONSORSHIP',
+        title: 'Nouveau Parrainage Accordé !',
+        message: `Un parrain a apporté sa caution (${totalRiskAmount.toLocaleString('fr-FR')} FCFA) pour votre cotisation.`,
+      }).catch(() => undefined);
+
+      dispatchNotification({
+        userId: intent.userId,
+        type: 'SPONSORSHIP',
+        title: 'Parrainage Confirmé !',
+        message: `Votre parrainage pour ${godchildName} (${totalRiskAmount.toLocaleString('fr-FR')} FCFA) a été pris en compte.`,
+      }).catch(() => undefined);
+
+      return { transactionId: transaction.id, reference, status: 'SUCCESS' };
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   if (intent.type === 'ACCOUNT_FUNDING' || intent.type === 'ACCOUNT_FUNDING_STRIPE') {

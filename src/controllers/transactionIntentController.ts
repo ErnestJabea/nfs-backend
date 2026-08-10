@@ -174,9 +174,13 @@ export const confirmTransactionIntent = async (req: any, res: Response) => {
     } catch (executionError: any) {
       await prisma.transactionIntent.update({
         where: { id: intent.id },
-        data: { status: 'FAILED', failureReason: String(executionError?.code || 'TRANSACTION_FAILED').slice(0, 120) },
+        data: { status: 'FAILED', failureReason: String(executionError?.code || executionError?.message || 'TRANSACTION_FAILED').slice(0, 120) },
       });
-      throw executionError;
+      const statusCode = Number(executionError?.status || executionError?.statusCode || 400);
+      return res.status(statusCode).json({
+        error: executionError?.message || 'Impossible de confirmer la transaction.',
+        code: executionError?.code || 'TRANSACTION_FAILED',
+      });
     }
   } catch (error: any) {
     return sendErrorResponse(res, error, 'Impossible de confirmer la transaction.');

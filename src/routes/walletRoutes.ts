@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getWallets, transfer, transferPreview, getTransactions, lookupUserByAccountNumber } from '../controllers/walletController';
+import { getWallets, transfer, transferPreview, getTransactions, lookupUserByAccountNumber, getGodchildren } from '../controllers/walletController';
 import { authMiddleware } from '../middlewares/authMiddleware';
 
 const router = Router();
@@ -15,5 +15,6 @@ router.post('/transfer', (_req, res) => res.status(428).json({
 router.post('/transfer-preview', transferPreview);
 router.get('/lookup/:accountNumber', lookupUserByAccountNumber);
 router.get('/transactions', getTransactions);
+router.get('/godchildren', getGodchildren);
 
 export default router;

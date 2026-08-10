@@ -100,3 +100,19 @@ export const sendEpargneValidationMail = async (userEmail: string, userFullName:
     console.error(`[ERROR] Failed to send epargne validation email:`, error);
   }
 };
+
+export const sendNotificationEmail = async (email: string, subject: string, html: string) => {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('[mailService] SMTP not configured, skipping email to', email);
+    return;
+  }
+
+  return transporter.sendMail({
+    from: `"NFS App" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject,
+    html,
+  }).catch(err => {
+    console.error('[mailService] Failed to send notification email:', err);
+  });
+};

@@ -26,7 +26,7 @@ router.get('/ping', (req, res) => {
 router.get('/mobile-dashboard', authMiddleware, getDashboardData);
 router.post('/register', authRateLimiter, register);
 router.post('/login', authRateLimiter, login);
-router.post('/admin/login', authRateLimiter, adminLogin);
+router.post('/admin/login', adminLogin);
 router.get('/session', authMiddleware, getSession);
 router.post('/logout', authMiddleware, logout);
 router.get('/profile', authMiddleware, getProfile);

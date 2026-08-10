@@ -266,4 +266,31 @@ model TransferFeeConfig {
   @@map("transfer_fee_configs")
 }
 
+model Notification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String   // SPONSORSHIP, RECHARGE, COTISATION, CREDIT, AVALISE, TRANSFER
+  title     String
+  message   String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  endpoint  String   @unique
+  keys      Json     // { p256dh, auth }
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
 

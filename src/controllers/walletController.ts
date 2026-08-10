@@ -11,6 +11,7 @@ const buildUserSearchConditions = (input: string) => {
   const isObjectId = /^[a-f\d]{24}$/i.test(trimmed);
 
   const conditions: any[] = [
+    { referralCode: normalized },
     { accountNumber: normalized },
     { accountNumber: `NFS-${normalized}` },
     { uniqueKey: normalized },
@@ -334,7 +335,11 @@ export const lookupUserByAccountNumber = async (req: any, res: Response) => {
         id: true,
         firstName: true,
         lastName: true,
-        accountNumber: true
+        accountNumber: true,
+        uniqueKey: true,
+        referralCode: true,
+        email: true,
+        phone: true
       }
     });
 
@@ -361,5 +366,78 @@ export const getTransactions = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error('getTransactions error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
+  }
+};
+
+export const getGodchildren = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.userId;
+
+    const godchildrenUsers = await prisma.user.findMany({
+      where: { referredById: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        referralCode: true,
+        accountNumber: true,
+        createdAt: true,
+      }
+    });
+
+    const sponsorshipTxs = await prisma.transaction.findMany({
+      where: {
+        userId,
+        status: 'SUCCESS',
+        OR: [
+          { targetAccountType: 'CREDIT_AVALISE' },
+          { purpose: { contains: 'Parrainage' } }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const result = godchildrenUsers.map(u => {
+      const tx = sponsorshipTxs.find(t => (t.operation as any)?.godchildUserId === u.id);
+      const cautionAmt = Math.abs((tx?.operation as any)?.cautionAmount || tx?.amount || 0);
+      return {
+        id: u.id,
+        name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || u.phone,
+        email: u.email,
+        phone: u.phone,
+        code: u.referralCode || u.accountNumber || u.id,
+        created_at: tx?.createdAt || u.createdAt,
+        groupName: (tx?.operation as any)?.groupName || tx?.purpose || 'Cotisation NFS',
+        cautionAmount: cautionAmt,
+        caution_amount: cautionAmt,
+        status: 'Actif',
+      };
+    });
+
+    sponsorshipTxs.forEach(tx => {
+      const godchildUserId = (tx.operation as any)?.godchildUserId;
+      if (godchildUserId && !result.some(r => r.id === godchildUserId)) {
+        const cautionAmt = Math.abs((tx.operation as any)?.cautionAmount || tx.amount || 0);
+        result.push({
+          id: godchildUserId,
+          name: (tx.operation as any)?.godchildName || 'Filleul NFS',
+          email: '',
+          phone: '',
+          code: (tx.operation as any)?.godchildCode || godchildUserId,
+          created_at: tx.createdAt,
+          groupName: tx.purpose || 'Cotisation NFS',
+          cautionAmount: cautionAmt,
+          caution_amount: cautionAmt,
+          status: 'Actif',
+        });
+      }
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    console.error('getGodchildren error:', error);
+    return res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });
   }
 };

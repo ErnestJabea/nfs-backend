@@ -209,7 +209,7 @@ import { startEnkapReconciliationCron } from './cron/enkapReconciliationCron';
 
 startPenaltyCron();
 startEnkapReconciliationCron(10);
-app.listen(Number(PORT), () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
   initCurrencyJob();
   ensureAdminAccountsOnStartup();
