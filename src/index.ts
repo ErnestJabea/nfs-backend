@@ -41,7 +41,6 @@ if (process.env.PRISMA_AUTO_GENERATE === 'true') {
 }
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 validateSecurityConfiguration();
 
 async function ensureAdminAccountsOnStartup() {

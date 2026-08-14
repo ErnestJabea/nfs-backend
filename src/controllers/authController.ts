@@ -185,6 +185,7 @@ export const login = async (req: Request, res: Response) => {
     res.cookie('token', session.token, getSessionCookieOptions());
     const safeUser = publicSessionUser(user);
     return res.json({
+      token: session.token,
       csrfToken: session.csrf,
       data: {
         id: user.id,

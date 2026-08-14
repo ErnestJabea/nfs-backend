@@ -38,7 +38,7 @@ export const getSessionTtlSeconds = () => {
 export const getSessionCookieOptions = () => ({
   httpOnly: true,
   secure: isProduction,
-  sameSite: isProduction ? ('strict' as const) : ('lax' as const),
+  sameSite: isProduction ? ('none' as const) : ('lax' as const),
   path: '/',
   maxAge: getSessionTtlSeconds() * 1000,
 });
@@ -54,6 +54,10 @@ export const getAllowedOrigins = () => {
     'https://www.nfs.ejabbing.com',
     'https://app.nfs.ejabbing.com',
     'https://www.app.nfs.ejabbing.com',
+    'https://nfs.e-jabbing.com',
+    'https://www.nfs.e-jabbing.com',
+    'https://app.nfs.e-jabbing.com',
+    'https://www.app.nfs.e-jabbing.com',
   ];
   const developmentOrigins = [
     'http://localhost:3001',
@@ -93,7 +97,7 @@ export const validateSecurityConfiguration = () => {
 
   if (isProduction) {
     for (const origin of getAllowedOrigins()) {
-      if (!origin.startsWith('https://')) {
+      if (origin && !origin.startsWith('https://') && !/localhost|127\.0\.0\.1/i.test(origin)) {
         throw new Error(`Production CORS origin must use HTTPS: ${origin}`);
       }
     }
