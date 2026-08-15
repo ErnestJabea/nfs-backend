@@ -1,3 +1,4 @@
+import { dispatchNotification } from '../services/notificationDispatcher';
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendEpargneRequestMail, sendEpargneValidationMail } from '../services/mailService';
@@ -275,6 +276,13 @@ export const directEpargne = async (req: Request, res: Response) => {
       return epargneTx;
     });
 
+    await dispatchNotification({
+      userId,
+      type: 'RECHARGE',
+      title: "Recharge Épargne effectuée",
+      message: `Votre compte épargne a été crédité de ${rechargeAmount} XAF.`,
+      data: { amount: rechargeAmount, type: 'EPARGNE_DIRECT' }
+    });
     res.status(200).json({ message: "Recharge d'épargne effectuée avec succès.", data: result });
   } catch (error: any) {
     console.error('directEpargne error:', error);

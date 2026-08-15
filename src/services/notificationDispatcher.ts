@@ -4,7 +4,7 @@ import { sendNotificationEmail } from './mailService';
 
 export interface DispatchNotificationOptions {
   userId: string;
-  type: 'SPONSORSHIP' | 'RECHARGE' | 'COTISATION' | 'CREDIT' | 'AVALISE' | 'TRANSFER' | 'SYSTEM';
+  type: 'SPONSORSHIP' | 'RECHARGE' | 'COTISATION' | 'CREDIT' | 'AVALISE' | 'TRANSFER' | 'SYSTEM' | 'KYC' | string;
   title: string;
   message: string;
   emailSubject?: string;

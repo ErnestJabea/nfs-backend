@@ -1,3 +1,4 @@
+import { dispatchNotification } from './notificationDispatcher';
 import axios from 'axios';
 import prisma from '../utils/prisma';
 
@@ -330,6 +331,13 @@ export const processEnkapOrderCompleted = async (data: {
       });
 
       console.log(`[Enkap Webhook] Compte ${targetAccountType} de l'utilisateur ${userId} crédité de ${amount} XAF via Enkap.`);
+      await dispatchNotification({
+        userId,
+        type: 'RECHARGE',
+        title: 'Recharge réussie (Enkap)',
+        message: `Votre compte ${targetAccountType === 'EPARGNE' ? 'Épargne' : 'Principal'} a été crédité de ${amount} XAF via Enkap.`,
+        data: { amount, orderMerchantId, type: 'ENKAP_FUNDING' }
+      });
       return { processed: true, transactionId: createdTx.id, transactionRef };
     });
   } else if (type === 'COTISATION_PAYMENT') {
@@ -372,6 +380,13 @@ export const processEnkapOrderCompleted = async (data: {
       });
 
       console.log(`[Enkap Webhook] Cotisation de ${amount} XAF enregistrée pour l'utilisateur ${userId} dans le groupe ${groupId}.`);
+      await dispatchNotification({
+        userId,
+        type: 'COTISATION',
+        title: 'Cotisation payée (Enkap)',
+        message: `Votre cotisation de ${amount} XAF pour le groupe ${group.name} a bien été enregistrée.`,
+        data: { amount, groupId, orderMerchantId, type: 'ENKAP_COTISATION' }
+      });
       return { processed: true, transactionId: createdTx.id, transactionRef };
     });
   }

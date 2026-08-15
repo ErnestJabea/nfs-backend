@@ -1,3 +1,4 @@
+import { dispatchNotification } from '../services/notificationDispatcher';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../utils/prisma';
@@ -382,7 +383,21 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       },
       include: { userGroups: true }
     });
-    res.json(updatedUser);
+    if (updatedUser && updatedUser.id) {
+        const kycStatus = String(req.body.kycStatus || req.body.status || '').toUpperCase();
+        if (kycStatus === 'APPROVED' || kycStatus === 'REJECTED') {
+          dispatchNotification({
+            userId: updatedUser.id,
+            type: 'KYC',
+            title: kycStatus === 'APPROVED' ? 'Vérification KYC Approuvée' : 'Vérification KYC Rejetée',
+            message: kycStatus === 'APPROVED' 
+              ? 'Votre dossier d’identification KYC a été validé avec succès.'
+              : 'Votre dossier KYC a été rejeté. Veuillez vérifier vos documents.',
+            data: { kycStatus }
+          }).catch(e => console.error('[Notification Error]:', e));
+        }
+      }
+      res.json(updatedUser);
   } catch (error: any) {
     console.error('updateUserProfile error:', error);
     const conflictMessage = uniqueConflictMessage(error);
@@ -1489,7 +1504,19 @@ export const updateLoanStatus = async (req: any, res: Response) => {
       throw sideEffectError;
     }
 
-    res.json(updatedLoan);
+    if (updatedLoan && updatedLoan.userId) {
+        const status = String(req.body.status || '').toUpperCase();
+        dispatchNotification({
+          userId: updatedLoan.userId,
+          type: 'CREDIT',
+          title: status === 'APPROVED' ? 'Demande de Crédit Approuvée' : 'Mise à jour de Crédit',
+          message: status === 'APPROVED'
+            ? `Votre demande de prêt/crédit de ${updatedLoan.amount || 0} XAF a été approuvée.`
+            : `Statut de votre demande de prêt : ${status}.`,
+          data: { loanId: updatedLoan.id, status }
+        }).catch(e => console.error('[Notification Error]:', e));
+      }
+      res.json(updatedLoan);
   } catch (error: any) {
     console.error('updateLoanStatus error:', error);
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Server error' : error.message });

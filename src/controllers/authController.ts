@@ -1,3 +1,4 @@
+import { dispatchNotification } from '../services/notificationDispatcher';
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -126,7 +127,16 @@ export const register = async (req: Request, res: Response) => {
       });
     });
 
-    res.status(201).json({ message: 'User registered successfully', userId: user.id });
+    if (referredBy && (referredBy as any).id) {
+        dispatchNotification({
+          userId: (referredBy as any).id,
+          type: 'SPONSORSHIP',
+          title: 'Nouveau Filleul !',
+          message: `Félicitations ! ${user.firstName || ''} ${user.lastName || ''}`.trim() + ` s'est inscrit(e) sur NFS avec votre code de parrainage.`,
+          data: { godchildId: user.id, type: 'NEW_REFERRAL' }
+        }).catch(err => console.error('[Referral Notification Error]:', err));
+      }
+      res.status(201).json({ message: 'User registered successfully', userId: user.id });
   } catch (error: any) {
     console.error('Registration error:', error);
     return sendErrorResponse(res, error, "Impossible de creer le compte pour le moment.");
