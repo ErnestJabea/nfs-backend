@@ -36,8 +36,8 @@ export const getSessionTtlSeconds = () => {
 
 export const getSessionCookieOptions = () => ({
   httpOnly: true,
-  secure: isProduction,
-  sameSite: isProduction ? ('none' as const) : ('lax' as const),
+  secure: true,
+  sameSite: 'none' as const,
   path: '/',
   maxAge: getSessionTtlSeconds() * 1000,
 });
