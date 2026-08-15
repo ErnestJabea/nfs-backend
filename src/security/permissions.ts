@@ -10,137 +10,93 @@ export type PermissionModule = {
   actions: PermissionAction[];
 };
 
-const commonReadActions: PermissionAction[] = [
+export const fullPermissionActions: PermissionAction[] = [
   { id: 'view', label: 'Voir' },
   { id: 'view_all', label: 'Voir tout' },
-];
-
-const commonWriteActions: PermissionAction[] = [
-  { id: 'create', label: 'Creer' },
+  { id: 'create', label: 'Créer' },
   { id: 'update', label: 'Modifier' },
+  { id: 'restore', label: 'Restaurer' },
+  { id: 'restore_all', label: 'Restaurer tout' },
+  { id: 'duplicate', label: 'Dupliquer' },
+  { id: 'reorder', label: 'Réorganiser' },
   { id: 'delete', label: 'Supprimer' },
   { id: 'delete_all', label: 'Supprimer tout' },
+  { id: 'delete_force', label: 'Supprimer définitivement' },
+  { id: 'delete_force_all', label: 'Supprimer tout définitivement' },
 ];
 
 export const permissionCatalog: PermissionModule[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    model: 'App\\Modules\\Dashboard',
-    actions: commonReadActions,
+    id: 'bank_account',
+    label: 'Compte Bancaire',
+    model: 'App\\Models\\BankDetail',
+    actions: fullPermissionActions,
   },
   {
     id: 'clients',
-    label: 'Clients',
-    model: 'App\\Models\\User',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'update', label: 'Modifier' },
-      { id: 'activate', label: 'Activer / Desactiver' },
-      { id: 'kyc', label: 'Gerer KYC' },
-      { id: 'credit', label: 'Crediter' },
-      { id: 'export', label: 'Exporter' },
-    ],
-  },
-  {
-    id: 'staff',
-    label: 'Administrateurs',
-    model: 'App\\Models\\AdminUser',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'update', label: 'Modifier' },
-      { id: 'activate', label: 'Activer / Desactiver' },
-      { id: 'reset_password', label: 'Reinitialiser mot de passe' },
-    ],
-  },
-  {
-    id: 'groups',
-    label: 'Groupes et habilitations',
-    model: 'App\\Models\\UserGroup',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'update', label: 'Modifier' },
-      { id: 'manage_permissions', label: 'Gerer les habilitations' },
-    ],
-  },
-  {
-    id: 'transactions',
-    label: 'Transactions Backoffice',
-    model: 'App\\Models\\Transaction',
-    actions: [
-      ...commonReadActions,
-      { id: 'validate', label: 'Valider' },
-      { id: 'reject', label: 'Rejeter' },
-      { id: 'export', label: 'Exporter' },
-    ],
-  },
-  {
-    id: 'mobile_transactions',
-    label: 'Transactions Mobile',
-    model: 'App\\Models\\MobileTransaction',
-    actions: [...commonReadActions, { id: 'export', label: 'Exporter' }],
-  },
-  {
-    id: 'transfers',
-    label: 'Transferts',
-    model: 'App\\Models\\Transfer',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'validate', label: 'Valider' },
-      { id: 'reject', label: 'Rejeter' },
-    ],
-  },
-  {
-    id: 'cotisations',
-    label: 'Cotisations',
-    model: 'App\\Models\\CotisationGroup',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'update', label: 'Modifier' },
-      { id: 'manage_participants', label: 'Gerer participants' },
-      { id: 'pay', label: 'Enregistrer paiement' },
-    ],
-  },
-  {
-    id: 'loans',
-    label: 'Prets et credits',
-    model: 'App\\Models\\Loan',
-    actions: [
-      ...commonReadActions,
-      { id: 'create', label: 'Creer' },
-      { id: 'validate', label: 'Valider' },
-      { id: 'reject', label: 'Rejeter' },
-      { id: 'configure', label: 'Configurer' },
-    ],
-  },
-  {
-    id: 'referral',
-    label: 'Parrainage',
-    model: 'App\\Modules\\Referral',
-    actions: [...commonReadActions, { id: 'export', label: 'Exporter' }],
-  },
-  {
-    id: 'settings',
-    label: 'Parametres',
-    model: 'App\\Modules\\Settings',
-    actions: [...commonReadActions, ...commonWriteActions],
+    label: 'Client',
+    model: 'App\\Models\\Client',
+    actions: fullPermissionActions,
   },
   {
     id: 'currencies',
-    label: 'Devises',
+    label: 'Devise',
     model: 'App\\Models\\Currency',
-    actions: [...commonReadActions, { id: 'sync', label: 'Synchroniser' }],
+    actions: fullPermissionActions,
   },
   {
-    id: 'transfer_fees',
-    label: 'Frais de transfert',
-    model: 'App\\Models\\TransferFeeConfig',
-    actions: [...commonReadActions, ...commonWriteActions],
+    id: 'onboarding',
+    label: "Session D'onboarding",
+    model: 'App\\Models\\OnboardingSession',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'products',
+    label: 'Produit',
+    model: 'App\\Models\\Product',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'roles',
+    label: 'Rôle',
+    model: 'Spatie\\Permission\\Models\\Role',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'subscriptions',
+    label: 'Souscription',
+    model: 'App\\Models\\Subscription',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'users',
+    label: 'Utilisateur',
+    model: 'App\\Models\\User',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'transactions',
+    label: 'Transaction',
+    model: 'App\\Models\\Transaction',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'cotisations',
+    label: 'Cotisation / Tontine',
+    model: 'App\\Models\\CotisationGroup',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'loans',
+    label: 'Prêt et Crédit',
+    model: 'App\\Models\\Loan',
+    actions: fullPermissionActions,
+  },
+  {
+    id: 'settings',
+    label: 'Paramètres & Frais',
+    model: 'App\\Modules\\Settings',
+    actions: fullPermissionActions,
   },
 ];
 
@@ -173,4 +129,3 @@ export const hasPermission = (permissions: string[], permission: string, allowAl
   const [moduleId] = permission.split('.');
   return permissions.includes(`${moduleId}.*`);
 };
-

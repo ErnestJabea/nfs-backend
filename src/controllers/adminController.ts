@@ -2342,3 +2342,149 @@ export const deleteTransferFee = async (req: Request, res: Response) => {
 
 
 
+
+
+// ==========================================
+// RBAC Roles & SuperAdmin Deletion Handlers
+// ==========================================
+
+export const getRoles = async (req: Request, res: Response) => {
+  try {
+    const groups = await prisma.userGroup.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const roles = groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      guardName: (g as any).guardName || 'web',
+      permissionsCount: Array.isArray(g.permissions) ? g.permissions.length : 0,
+      permissions: g.permissions || [],
+      updatedAt: g.updatedAt || g.createdAt,
+      isSystem: Boolean((g as any).isSystemRole),
+    }));
+
+    res.json(roles);
+  } catch (error: any) {
+    console.error('getRoles error:', error);
+    res.status(500).json({ error: 'Erreur de récupération des rôles.' });
+  }
+};
+
+export const getRole = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const group = await prisma.userGroup.findUnique({ where: { id: String(id) } });
+
+    if (!group) {
+      return res.status(404).json({ error: 'Rôle introuvable.' });
+    }
+
+    res.json({
+      id: group.id,
+      name: group.name,
+      guardName: (group as any).guardName || 'web',
+      permissions: group.permissions || [],
+      updatedAt: group.updatedAt || group.createdAt,
+      isSystem: Boolean((group as any).isSystemRole),
+    });
+  } catch (error: any) {
+    console.error('getRole error:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération du rôle.' });
+  }
+};
+
+export const createRole = async (req: Request, res: Response) => {
+  try {
+    const { name, guardName, permissions } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Le nom du rôle est requis.' });
+    }
+
+    const normalizedName = name.trim();
+    const existing = await prisma.userGroup.findFirst({ where: { name: normalizedName } });
+    if (existing) {
+      return res.status(400).json({ error: 'Un rôle avec ce nom existe déjà.' });
+    }
+
+    const newGroup = await prisma.userGroup.create({
+      data: {
+        name: normalizedName,
+        permissions: Array.isArray(permissions) ? permissions : [],
+        description: `Guard ${guardName || 'web'}`,
+      }
+    });
+
+    res.status(201).json(newGroup);
+  } catch (error: any) {
+    console.error('createRole error:', error);
+    res.status(500).json({ error: 'Erreur de création du rôle.' });
+  }
+};
+
+export const updateRole = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, guardName, permissions } = req.body;
+
+    const group = await prisma.userGroup.findUnique({ where: { id: String(id) } });
+    if (!group) return res.status(404).json({ error: 'Rôle introuvable.' });
+
+    const updated = await prisma.userGroup.update({
+      where: { id: String(id) },
+      data: {
+        name: name ? String(name).trim() : group.name,
+        permissions: Array.isArray(permissions) ? permissions : group.permissions,
+        description: guardName ? `Guard ${guardName}` : group.description,
+      }
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error('updateRole error:', error);
+    res.status(500).json({ error: 'Erreur de mise à jour du rôle.' });
+  }
+};
+
+export const deleteRole = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.userGroup.delete({ where: { id: String(id) } });
+    res.json({ message: 'Rôle supprimé avec succès.' });
+  } catch (error: any) {
+    console.error('deleteRole error:', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression du rôle.' });
+  }
+};
+
+export const deleteTransactionSuperAdmin = async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    await prisma.transaction.delete({ where: { id: String(txId) } });
+    res.json({ message: 'Transaction supprimée définitivement par le SuperAdministrateur.' });
+  } catch (error: any) {
+    console.error('deleteTransactionSuperAdmin error:', error);
+    res.status(500).json({ error: 'Impossible de supprimer cette transaction.' });
+  }
+};
+
+export const deleteUserSuperAdmin = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
+    if (!targetUser) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+
+    await prisma.$transaction([
+      prisma.pushSubscription.deleteMany({ where: { userId: String(id) } }),
+      prisma.notification.deleteMany({ where: { userId: String(id) } }),
+      prisma.transaction.deleteMany({ where: { userId: String(id) } }),
+      prisma.account.deleteMany({ where: { id: { in: targetUser.accountIds || [] } } }),
+      prisma.user.delete({ where: { id: String(id) } })
+    ]);
+
+    res.json({ message: 'Utilisateur et comptes associés supprimés définitivement par le SuperAdministrateur.' });
+  } catch (error: any) {
+    console.error('deleteUserSuperAdmin error:', error);
+    res.status(500).json({ error: 'Impossible de supprimer cet utilisateur.' });
+  }
+};

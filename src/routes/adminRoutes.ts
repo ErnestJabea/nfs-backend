@@ -1,3 +1,4 @@
+import { superAdminMiddleware } from '../middlewares/authMiddleware';
 import { Router } from 'express';
 import { 
   getUsers, 
@@ -45,7 +46,7 @@ import {
   changeAdminPassword,
   setupAdmin2FA,
   verifyAdmin2FA
-} from '../controllers/adminController';
+, getRoles, getRole, createRole, updateRole, deleteRole, deleteTransactionSuperAdmin, deleteUserSuperAdmin } from '../controllers/adminController';
 import { authMiddleware, adminMiddleware } from '../middlewares/authMiddleware';
 import { requireAnyPermission, requirePermission } from '../middlewares/permissionMiddleware';
 import prisma from '../utils/prisma';
@@ -170,5 +171,17 @@ router.get('/profile/me', getAdminProfile);
 router.put('/profile/password', changeAdminPassword);
 router.get('/profile/2fa/setup', setupAdmin2FA);
 router.post('/profile/2fa/verify', verifyAdmin2FA);
+
+
+// RBAC Roles Routes
+router.get('/roles', requirePermission('roles.view'), getRoles);
+router.get('/roles/:id', requirePermission('roles.view'), getRole);
+router.post('/roles', requirePermission('roles.create'), createRole);
+router.put('/roles/:id', requirePermission('roles.update'), updateRole);
+router.delete('/roles/:id', superAdminMiddleware, deleteRole);
+
+// SuperAdmin Strict Deletion Routes
+router.delete('/transactions/:txId', superAdminMiddleware, deleteTransactionSuperAdmin);
+router.delete('/users/:id/force', superAdminMiddleware, deleteUserSuperAdmin);
 
 export default router;

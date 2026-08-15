@@ -102,3 +102,39 @@ export const adminMiddleware = async (req: any, res: Response, next: NextFunctio
     return res.status(500).json({ error: 'Verification des droits impossible pour le moment.' });
   }
 };
+
+
+export const superAdminMiddleware = async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.userId || req.user?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Session invalide. Veuillez vous reconnecter.', code: 'SESSION_INVALID' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, roles: true, activated: true, userGroups: true }
+    });
+
+    if (!user || !user.activated) {
+      return res.status(403).json({ error: 'Compte administrateur inactif.', code: 'ACCOUNT_DISABLED' });
+    }
+
+    const roles = Array.isArray(user.roles) ? user.roles : [];
+    const groups = Array.isArray(user.userGroups) ? user.userGroups : [];
+    const isSuperAdmin = roles.includes('SUPERADMIN') || roles.includes('COMEX') ||
+      groups.some((g: any) => typeof g?.name === 'string' && g.name.toUpperCase().includes('SUPERADMIN'));
+
+    if (!isSuperAdmin) {
+      return res.status(403).json({
+        error: 'Accès strictement réservé au Super Administrateur.',
+        code: 'SUPERADMIN_REQUIRED'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('superAdminMiddleware error:', error);
+    return res.status(500).json({ error: 'Vérification des droits SuperAdmin impossible.' });
+  }
+};
