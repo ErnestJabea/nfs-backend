@@ -10,100 +10,138 @@ export type PermissionModule = {
   actions: PermissionAction[];
 };
 
-export const fullPermissionActions: PermissionAction[] = [
-  { id: 'view', label: 'Voir' },
-  { id: 'view_all', label: 'Voir tout' },
-  { id: 'create', label: 'Créer' },
-  { id: 'update', label: 'Modifier' },
-  { id: 'restore', label: 'Restaurer' },
-  { id: 'restore_all', label: 'Restaurer tout' },
-  { id: 'duplicate', label: 'Dupliquer' },
-  { id: 'reorder', label: 'Réorganiser' },
-  { id: 'delete', label: 'Supprimer' },
-  { id: 'delete_all', label: 'Supprimer tout' },
-  { id: 'delete_force', label: 'Supprimer définitivement' },
-  { id: 'delete_force_all', label: 'Supprimer tout définitivement' },
-];
-
-export const permissionCatalog: PermissionModule[] = [
+export const PERMISSION_MODULES: PermissionModule[] = [
   {
-    id: 'bank_account',
-    label: 'Compte Bancaire',
-    model: 'App\\Models\\BankDetail',
-    actions: fullPermissionActions,
+    id: 'dashboard',
+    label: 'Tableau de Bord',
+    model: 'App\\Modules\\Dashboard',
+    actions: [
+      { id: 'view', label: 'Voir statistiques' },
+      { id: 'export', label: 'Exporter données' },
+    ],
   },
   {
     id: 'clients',
-    label: 'Client',
-    model: 'App\\Models\\Client',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'currencies',
-    label: 'Devise',
-    model: 'App\\Models\\Currency',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'onboarding',
-    label: "Session D'onboarding",
-    model: 'App\\Models\\OnboardingSession',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'products',
-    label: 'Produit',
-    model: 'App\\Models\\Product',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'roles',
-    label: 'Rôle',
-    model: 'Spatie\\Permission\\Models\\Role',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'subscriptions',
-    label: 'Souscription',
-    model: 'App\\Models\\Subscription',
-    actions: fullPermissionActions,
-  },
-  {
-    id: 'users',
-    label: 'Utilisateur',
+    label: 'Gestion de la Clientèle',
     model: 'App\\Models\\User',
-    actions: fullPermissionActions,
+    actions: [
+      { id: 'view', label: 'Voir clients' },
+      { id: 'create', label: 'Créer client' },
+      { id: 'update', label: 'Modifier profil' },
+      { id: 'activate', label: 'Activer / Suspendre' },
+      { id: 'kyc', label: 'Valider / Rejeter KYC' },
+      { id: 'credit', label: 'Créditer solde' },
+      { id: 'export', label: 'Exporter liste' },
+      { id: 'delete', label: 'Supprimer client (SuperAdmin)' },
+    ],
   },
   {
     id: 'transactions',
-    label: 'Transaction',
+    label: 'Transactions & Opérations',
     model: 'App\\Models\\Transaction',
-    actions: fullPermissionActions,
+    actions: [
+      { id: 'view', label: 'Voir transactions' },
+      { id: 'validate', label: 'Valider transaction' },
+      { id: 'reject', label: 'Rejeter transaction' },
+      { id: 'export', label: 'Exporter rapport' },
+      { id: 'delete', label: 'Supprimer transaction (SuperAdmin)' },
+    ],
+  },
+  {
+    id: 'transfers',
+    label: 'Transferts & Frais',
+    model: 'App\\Models\\Transfer',
+    actions: [
+      { id: 'view', label: 'Voir transferts' },
+      { id: 'create', label: 'Initier transfert' },
+      { id: 'validate', label: 'Valider transfert' },
+      { id: 'configure_fees', label: 'Configurer frais' },
+    ],
+  },
+  {
+    id: 'epargne',
+    label: 'Épargne & Retraits',
+    model: 'App\\Models\\Epargne',
+    actions: [
+      { id: 'view', label: 'Voir demandes épargne' },
+      { id: 'validate', label: 'Valider épargne COMEX' },
+      { id: 'create', label: 'Effectuer épargne' },
+    ],
   },
   {
     id: 'cotisations',
-    label: 'Cotisation / Tontine',
+    label: 'Cotisations & Tontines (Djangui)',
     model: 'App\\Models\\CotisationGroup',
-    actions: fullPermissionActions,
+    actions: [
+      { id: 'view', label: 'Voir groupes' },
+      { id: 'create', label: 'Créer groupe tontine' },
+      { id: 'update', label: 'Modifier groupe' },
+      { id: 'manage_participants', label: 'Gérer participants' },
+      { id: 'pay', label: 'Enregistrer paiement' },
+      { id: 'delete', label: 'Supprimer groupe (SuperAdmin)' },
+    ],
   },
   {
     id: 'loans',
-    label: 'Prêt et Crédit',
+    label: 'Prêts, Crédits & Avalises',
     model: 'App\\Models\\Loan',
-    actions: fullPermissionActions,
+    actions: [
+      { id: 'view', label: 'Voir demandes prêt' },
+      { id: 'create', label: 'Créer prêt' },
+      { id: 'validate', label: 'Valider prêt COMEX' },
+      { id: 'reject', label: 'Rejeter prêt' },
+      { id: 'configure', label: 'Configurer taux & conditions' },
+      { id: 'delete', label: 'Supprimer prêt (SuperAdmin)' },
+    ],
+  },
+  {
+    id: 'referral',
+    label: 'Parrainage & Filleuls',
+    model: 'App\\Modules\\Referral',
+    actions: [
+      { id: 'view', label: 'Voir statistiques parrainage' },
+      { id: 'export', label: 'Exporter arbre filleuls' },
+    ],
+  },
+  {
+    id: 'currencies',
+    label: 'Devises & Taux de Change',
+    model: 'App\\Models\\Currency',
+    actions: [
+      { id: 'view', label: 'Voir devises' },
+      { id: 'sync', label: 'Synchroniser taux' },
+    ],
+  },
+  {
+    id: 'staff',
+    label: 'Équipe Admin & Rôles (RBAC)',
+    model: 'App\\Models\\AdminUser',
+    actions: [
+      { id: 'view', label: 'Voir administrateurs' },
+      { id: 'create', label: 'Créer administrateur' },
+      { id: 'update', label: 'Modifier administrateur' },
+      { id: 'activate', label: 'Activer / Désactiver admin' },
+      { id: 'reset_password', label: 'Réinitialiser mot de passe' },
+      { id: 'manage_permissions', label: 'Gérer Rôles & Accréditations' },
+    ],
   },
   {
     id: 'settings',
-    label: 'Paramètres & Frais',
+    label: 'Paramètres Système',
     model: 'App\\Modules\\Settings',
-    actions: fullPermissionActions,
+    actions: [
+      { id: 'view', label: 'Voir paramètres' },
+      { id: 'update', label: 'Modifier configuration' },
+    ],
   },
 ];
 
 export const permissionKey = (moduleId: string, actionId: string) => `${moduleId}.${actionId}`;
 
+export const permissionCatalog = PERMISSION_MODULES;
+
 export const allPermissionKeys = new Set(
-  permissionCatalog.flatMap(module => module.actions.map(action => permissionKey(module.id, action.id)))
+  PERMISSION_MODULES.flatMap(module => module.actions.map(action => permissionKey(module.id, action.id)))
 );
 
 export const normalizePermissions = (permissions: unknown): string[] => {
