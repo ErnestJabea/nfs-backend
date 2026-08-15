@@ -159,11 +159,27 @@ export const extractGroupPermissions = (groups: any[] = []) => {
   return normalizePermissions(groups.flatMap(group => group?.permissions || []));
 };
 
-export const hasPermission = (permissions: string[], permission: string, allowAllAccess = false) => {
-  if (allowAllAccess) return true;
-  if (permissions.includes('*')) return true;
-  if (permissions.includes(permission)) return true;
+export const hasPermission = (
+  permissionsOrPermission: string[] | string,
+  permissionOrAllowAll?: string | boolean,
+  allowAllAccess = false
+): boolean => {
+  if (typeof permissionsOrPermission === 'string') {
+    const targetPermission = permissionsOrPermission;
+    const permissions: string[] = [];
+    if (permissions.includes('*') || permissions.includes(targetPermission)) return true;
+    const [moduleId] = (targetPermission || '').split('.');
+    return Boolean(moduleId && permissions.includes(`${moduleId}.*`));
+  }
 
-  const [moduleId] = permission.split('.');
-  return permissions.includes(`${moduleId}.*`);
+  const permissions = Array.isArray(permissionsOrPermission) ? permissionsOrPermission : [];
+  const targetPermission = typeof permissionOrAllowAll === 'string' ? permissionOrAllowAll : '';
+  const isAllowAll = typeof permissionOrAllowAll === 'boolean' ? permissionOrAllowAll : allowAllAccess;
+
+  if (isAllowAll) return true;
+  if (!targetPermission) return false;
+  if (permissions.includes('*') || permissions.includes(targetPermission)) return true;
+
+  const [moduleId] = targetPermission.split('.');
+  return Boolean(moduleId && permissions.includes(`${moduleId}.*`));
 };
