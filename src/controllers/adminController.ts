@@ -136,7 +136,16 @@ export const getUsers = async (req: Request, res: Response) => {
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: { userGroups: true }
+          include: {
+          userGroups: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              permissions: true
+            }
+          }
+        }
         }),
         prisma.user.count({ where: whereClause })
       ]);
